@@ -1,0 +1,35 @@
+.container {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 2rem;
+  font-family: sans-serif;
+}
+
+input, button {
+  padding: 0.5rem;
+  margin-top: 1rem;
+  width: 100%;
+  font-size: 1rem;
+}
+
+button {
+  background-color: #2563eb;
+  color: white;
+  border: none;
+  cursor: pointer;
+  margin-bottom: 1rem;
+}
+
+.product-card {
+  border: 1px solid #ccc;
+  padding: 1rem;
+  margin-top: 2rem;
+  border-radius: 8px;
+  background-color: #f9f9f9;
+}
+
+.product-card img {
+  max-width: 100%;
+  height: auto;
+  margin-top: 0.5rem;
+}
