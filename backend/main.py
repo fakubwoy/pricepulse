@@ -21,4 +21,4 @@ def root():
 
 @app.get("/test-product")
 def test_product():
-    return Product(name="Samsung Galaxy M14", price=12999, url="https://amazon.in/...").dict()
+    return Product(name="Samsung Galaxy M35", price=18499, url="https://www.amazon.in/Samsung-Daybreak-Storage-Corning-Gorilla/dp/B0D812DY6P/ref=pd_ci_mcx_mh_pe_im_d1_hxwPPE_sspa_dk_det_cav_p_1_1").dict()
