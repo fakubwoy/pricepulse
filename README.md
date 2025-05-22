@@ -11,7 +11,7 @@
 -  Fast, responsive frontend (React + Vite)  
 -  Efficient scraping and database architecture  
 
-## 🛠 Tech Stack
+##  Tech Stack
 
 ### Frontend
 - React
@@ -25,7 +25,7 @@
 - Flask-Mail
 
 
-## ⚙️ Installation
+##  Installation
 
 ### 1. Clone the Repository
 
