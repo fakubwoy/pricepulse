@@ -12,3 +12,4 @@ lxml==4.9.3
 flask-login==0.6.2
 Werkzeug==2.3.7
 PyJWT==2.8.0
+playwright==1.52.0
