@@ -184,6 +184,49 @@ def get_product(current_user, product_id):
         return jsonify({'error': 'Product not found'}), 404
         
     return jsonify(product.to_dict())
+def validate_and_clean_amazon_url(url):
+    """
+    Validate and clean Amazon URL to ensure it's a proper product URL
+    """
+    import re
+    
+    # Remove extra parameters and clean the URL
+    if not url.startswith('http'):
+        url = 'https://' + url
+    
+    # Extract ASIN from various Amazon URL formats
+    asin_patterns = [
+        r'/dp/([A-Z0-9]{10})',
+        r'/gp/product/([A-Z0-9]{10})',
+        r'/exec/obidos/ASIN/([A-Z0-9]{10})',
+        r'amazon\.[a-z.]+/([A-Z0-9]{10})',
+    ]
+    
+    asin = None
+    for pattern in asin_patterns:
+        match = re.search(pattern, url)
+        if match:
+            asin = match.group(1)
+            break
+    
+    if not asin:
+        return None, "Invalid Amazon URL. Could not find product ASIN."
+    
+    # Determine domain
+    domain = "amazon.com"  # default
+    if "amazon.in" in url:
+        domain = "amazon.in"
+    elif "amazon.co.uk" in url:
+        domain = "amazon.co.uk"
+    elif "amazon.ca" in url:
+        domain = "amazon.ca"
+    elif "amazon.de" in url:
+        domain = "amazon.de"
+    
+    # Create clean product URL
+    clean_url = f"https://www.{domain}/dp/{asin}"
+    
+    return clean_url, None
 
 @app.route('/api/products', methods=['POST'])
 @token_required
@@ -194,19 +237,21 @@ def add_product(current_user):
     if not data or 'url' not in data:
         return jsonify({'error': 'URL is required'}), 400
         
-    url = data['url']
+    url = data['url'].strip()
+    
+    # Validate and clean the URL
+    clean_url, error = validate_and_clean_amazon_url(url)
+    if error:
+        return jsonify({'error': error}), 400
     
     # Check if product is already being tracked by this user
-    existing_product = Product.query.filter_by(url=url, user_id=current_user.id).first()
+    existing_product = Product.query.filter_by(url=clean_url, user_id=current_user.id).first()
     if existing_product:
         return jsonify(existing_product.to_dict())
     
     # Scrape product details
     scraper = AmazonScraper()
-    if not scraper.is_valid_amazon_url(url):
-        return jsonify({'error': 'Invalid Amazon URL'}), 400
-        
-    product_data = scraper.scrape_product(url)
+    product_data = scraper.scrape_product(clean_url)
     
     if 'error' in product_data:
         return jsonify({'error': product_data['error']}), 400
@@ -214,7 +259,7 @@ def add_product(current_user):
     # Create new product
     product = Product(
         user_id=current_user.id,
-        url=product_data['url'],
+        url=clean_url,  # Use cleaned URL
         name=product_data['name'],
         image=product_data['image'],
         current_price=product_data['current_price'],
