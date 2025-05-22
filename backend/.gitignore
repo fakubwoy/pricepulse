@@ -1,0 +1,4 @@
+.env
+/instance
+pricepulse.db
+__pycache__/
