@@ -1,16 +1,8 @@
-import sqlite3
-
-def init_db():
-    conn = sqlite3.connect("pricepulse.db")
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS products (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT,
-            price INTEGER,
-            url TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    conn.commit()
-    conn.close()
+from flask_sqlalchemy import SQLAlchemy
+db = SQLAlchemy()
+def init_db(app):
+    db.init_app(app)
+    with app.app_context():
+        db.create_all() 
+def get_db():
+    return db
