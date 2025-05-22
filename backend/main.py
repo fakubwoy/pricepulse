@@ -188,57 +188,106 @@ def get_product(current_user, product_id):
 @app.route('/api/products', methods=['POST'])
 @token_required
 def add_product(current_user):
-    """Add a new product to track"""
+    """Add a new product to track with enhanced error handling"""
     data = request.json
     
     if not data or 'url' not in data:
         return jsonify({'error': 'URL is required'}), 400
         
-    url = data['url']
+    url = data['url'].strip()
+    
+    if not url:
+        return jsonify({'error': 'URL cannot be empty'}), 400
     
     # Check if product is already being tracked by this user
     existing_product = Product.query.filter_by(url=url, user_id=current_user.id).first()
     if existing_product:
         return jsonify(existing_product.to_dict())
     
-    # Scrape product details
+    # Scrape product details with enhanced error handling
     scraper = AmazonScraper()
+    
+    # Validate URL first
     if not scraper.is_valid_amazon_url(url):
-        return jsonify({'error': 'Invalid Amazon URL'}), 400
+        return jsonify({
+            'error': 'Invalid Amazon URL. Please provide a valid Amazon product URL (e.g., https://www.amazon.in/dp/XXXXXXXXXX)'
+        }), 400
+    
+    try:
+        product_data = scraper.scrape_product(url)
         
-    product_data = scraper.scrape_product(url)
-    
-    if 'error' in product_data:
-        return jsonify({'error': product_data['error']}), 400
+        if 'error' in product_data:
+            # Log the error for debugging
+            print(f"Scraping error for URL {url}: {product_data['error']}")
+            
+            # Provide specific error messages based on the error type
+            error_msg = product_data['error']
+            
+            if 'captcha' in error_msg.lower() or 'robot' in error_msg.lower():
+                return jsonify({
+                    'error': 'Amazon is currently blocking automated requests. This can happen due to high traffic or security measures. Please try again in a few minutes, or try using a different network/VPN.'
+                }), 429
+            elif 'not found' in error_msg.lower():
+                return jsonify({
+                    'error': 'Product not found. Please check if the URL is correct and the product is still available on Amazon.'
+                }), 404
+            elif 'timeout' in error_msg.lower():
+                return jsonify({
+                    'error': 'Request timed out. Please try again in a moment.'
+                }), 408
+            else:
+                return jsonify({
+                    'error': f'Unable to fetch product information: {error_msg}'
+                }), 400
         
-    # Create new product
-    product = Product(
-        user_id=current_user.id,
-        url=product_data['url'],
-        name=product_data['name'],
-        image=product_data['image'],
-        current_price=product_data['current_price'],
-        original_price=product_data['original_price'],
-        currency=product_data['currency'],
-        description=product_data['description'],
-        rating=product_data['rating'],
-        in_stock=product_data['in_stock'],
-        last_updated=get_ist_time()
-    )
-    
-    db.session.add(product)
-    db.session.commit()
-    
-    # Add initial price history entry
-    price_history = PriceHistory(
-        product_id=product.id,
-        price=product_data['current_price']
-    )
-    
-    db.session.add(price_history)
-    db.session.commit()
-    
-    return jsonify(product.to_dict()), 201
+        # Validate essential product data
+        if not product_data.get('name'):
+            return jsonify({
+                'error': 'Could not extract product information. The product page may be unavailable or blocked.'
+            }), 400
+        
+        if not product_data.get('current_price'):
+            # Still create the product but warn about missing price
+            product_data['current_price'] = 0.0
+            print(f"Warning: No price found for product {product_data['name']}")
+        
+        # Create new product
+        product = Product(
+            user_id=current_user.id,
+            url=product_data['url'],
+            name=product_data['name'],
+            image=product_data.get('image'),
+            current_price=product_data['current_price'],
+            original_price=product_data.get('original_price'),
+            currency=product_data.get('currency', '₹'),
+            description=product_data.get('description'),
+            rating=product_data.get('rating'),
+            in_stock=product_data.get('in_stock', True),
+            last_updated=get_ist_time()
+        )
+        
+        db.session.add(product)
+        db.session.commit()
+        
+        # Add initial price history entry only if we have a valid price
+        if product_data['current_price'] > 0:
+            price_history = PriceHistory(
+                product_id=product.id,
+                price=product_data['current_price']
+            )
+            db.session.add(price_history)
+            db.session.commit()
+        
+        return jsonify(product.to_dict()), 201
+        
+    except Exception as e:
+        # Log the full error for debugging
+        print(f"Unexpected error while adding product {url}: {str(e)}")
+        db.session.rollback()
+        
+        return jsonify({
+            'error': 'An unexpected error occurred while processing your request. Please try again later.'
+        }), 500
 
 @app.route('/api/products/<int:product_id>', methods=['DELETE'])
 @token_required
@@ -286,51 +335,168 @@ def get_price_history(current_user, product_id):
 @app.route('/api/products/<int:product_id>/refresh', methods=['POST'])
 @token_required
 def refresh_product(current_user, product_id):
-    """Manually refresh product data"""
+    """Manually refresh product data with enhanced error handling"""
     product = Product.query.filter_by(id=product_id, user_id=current_user.id).first()
     if not product:
         return jsonify({'error': 'Product not found'}), 404
-        
+    
+    # Check if product was recently updated to avoid spam
+    if product.last_updated and (get_ist_time() - product.last_updated).total_seconds() < 300:  # 5 minutes
+        return jsonify({
+            'error': 'Product was recently updated. Please wait a few minutes before refreshing again.',
+            'last_updated': product.last_updated.isoformat()
+        }), 429
+    
     scraper = AmazonScraper()
-    product_data = scraper.scrape_product(product.url)
     
-    if 'error' in product_data:
-        return jsonify({'error': product_data['error']}), 400
+    try:
+        product_data = scraper.scrape_product(product.url)
         
-    # Update product
-    product.name = product_data['name'] or product.name
-    product.image = product_data['image'] or product.image
-    product.last_updated = get_ist_time()
-    
-    # Only add price history if price has changed
-    if product_data['current_price'] and product_data['current_price'] != product.current_price:
-        old_price = product.current_price
-        product.current_price = product_data['current_price']
+        if 'error' in product_data:
+            # Log the error
+            print(f"Refresh error for product {product.name}: {product_data['error']}")
+            
+            # Update last_updated even if scraping failed to prevent spam
+            product.last_updated = get_ist_time()
+            db.session.commit()
+            
+            # Return specific error messages
+            error_msg = product_data['error']
+            if 'captcha' in error_msg.lower() or 'robot' in error_msg.lower():
+                return jsonify({
+                    'error': 'Amazon is currently blocking requests. Please try again later or use a VPN.'
+                }), 429
+            else:
+                return jsonify({'error': error_msg}), 400
         
-        # Add to price history
-        price_history = PriceHistory(product_id=product.id, price=product_data['current_price'])
-        db.session.add(price_history)
+        # Update product with new data
+        updated = False
         
-        # Check alerts immediately if price decreased
-        if product_data['current_price'] < old_price:
-            check_price_alerts()
-    
-    # Update additional attributes if available
-    if product_data['original_price']:
-        product.original_price = product_data['original_price']
-    if product_data['currency']:
-        product.currency = product_data['currency']
-    if product_data['description']:
-        product.description = product_data['description']
-    if product_data['rating']:
-        product.rating = product_data['rating']
-    if product_data['in_stock'] is not None:
-        product.in_stock = product_data['in_stock']
+        if product_data.get('name') and product_data['name'] != product.name:
+            product.name = product_data['name']
+            updated = True
+            
+        if product_data.get('image') and product_data['image'] != product.image:
+            product.image = product_data['image']
+            updated = True
         
-    db.session.commit()
-    
-    return jsonify(product.to_dict())
+        # Update last_updated timestamp
+        product.last_updated = get_ist_time()
+        
+        # Handle price update
+        if product_data.get('current_price') and product_data['current_price'] != product.current_price:
+            old_price = product.current_price
+            product.current_price = product_data['current_price']
+            updated = True
+            
+            # Add to price history
+            price_history = PriceHistory(product_id=product.id, price=product_data['current_price'])
+            db.session.add(price_history)
+            
+            # Check alerts immediately if price decreased
+            if old_price and product_data['current_price'] < old_price:
+                check_price_alerts()
+        
+        # Update additional attributes if available
+        if product_data.get('original_price'):
+            product.original_price = product_data['original_price']
+            updated = True
+            
+        if product_data.get('currency'):
+            product.currency = product_data['currency']
+            updated = True
+            
+        if product_data.get('description'):
+            product.description = product_data['description']
+            updated = True
+            
+        if product_data.get('rating'):
+            product.rating = product_data['rating']
+            updated = True
+            
+        if product_data.get('in_stock') is not None:
+            product.in_stock = product_data['in_stock']
+            updated = True
+        
+        db.session.commit()
+        
+        response_data = product.to_dict()
+        if updated:
+            response_data['message'] = 'Product updated successfully'
+        else:
+            response_data['message'] = 'Product is already up to date'
+            
+        return jsonify(response_data)
+        
+    except Exception as e:
+        print(f"Unexpected error refreshing product {product.name}: {str(e)}")
+        db.session.rollback()
+        
+        # Still update the timestamp to prevent spam
+        try:
+            product.last_updated = get_ist_time()
+            db.session.commit()
+        except:
+            pass
+            
+        return jsonify({
+            'error': 'An unexpected error occurred while refreshing the product. Please try again later.'
+        }), 500
+@app.route('/api/scraper/status', methods=['GET'])
+@token_required
+def scraper_status(current_user):
+    """Check if the scraper is working properly"""
+    try:
+        scraper = AmazonScraper()
+        
+        # Test with a known Amazon URL (replace with a real one)
+        test_url = "https://www.amazon.in/dp/B08N5WRWNW"  # Example URL - replace with valid one
+        
+        if scraper.is_valid_amazon_url(test_url):
+            return jsonify({
+                'status': 'operational',
+                'message': 'Scraper is configured properly',
+                'timestamp': get_ist_time().isoformat()
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': 'URL validation failed',
+                'timestamp': get_ist_time().isoformat()
+            }), 500
+            
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Scraper error: {str(e)}',
+            'timestamp': get_ist_time().isoformat()
+        }), 500
 
+# Add rate limiting information endpoint
+@app.route('/api/rate-limit/info', methods=['GET'])
+@token_required
+def rate_limit_info(current_user):
+    """Get rate limiting information for the user"""
+    # Count recent product additions and refreshes
+    recent_additions = Product.query.filter_by(user_id=current_user.id).filter(
+        Product.created_at >= get_ist_time() - timedelta(hours=1)
+    ).count()
+    
+    recent_updates = Product.query.filter_by(user_id=current_user.id).filter(
+        Product.last_updated >= get_ist_time() - timedelta(minutes=30)
+    ).count()
+    
+    return jsonify({
+        'user_id': current_user.id,
+        'recent_additions_last_hour': recent_additions,
+        'recent_updates_last_30min': recent_updates,
+        'recommendations': {
+            'wait_between_requests': '2-5 minutes',
+            'daily_limit_suggestion': '10-20 products',
+            'use_vpn_if_blocked': True
+        }
+    })
+    
 @app.route('/api/alerts', methods=['POST'])
 @token_required
 def create_alert(current_user):
