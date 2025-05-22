@@ -17,10 +17,10 @@ from email_service import check_price_alerts, send_email_alert
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app, origins=[     # Enable CORS for all routes
-    "http://localhost:3000",  # Development
-    "https://your-frontend-url.onrender.com"  # Production (update this after frontend deployment)
-])
+CORS(app, origins=[
+    "http://localhost:3000",  # Development 
+    "https://pricepulse-frontend.onrender.com"  # If this is your URL
+], supports_credentials=True)
   
 DATABASE_URL = os.getenv('DATABASE_URL')
 if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
