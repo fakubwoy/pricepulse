@@ -84,7 +84,7 @@ if os.getenv('RENDER'):  # Only run scheduler on Render
 
 @login_manager.user_loader
 def load_user(user_id):
-    return db.session.get(User, int(user_id))
+    return User.query.get(int(user_id))
 
 def token_required(f):
     @wraps(f)
@@ -99,18 +99,9 @@ def token_required(f):
             
         try:
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
-            current_user = db.session.get(User, data['user_id'])
-            
-            # Check if user exists
-            if not current_user:
-                return jsonify({'error': 'User not found'}), 401
-                
-        except jwt.ExpiredSignatureError:
-            return jsonify({'error': 'Token has expired'}), 401
-        except jwt.InvalidTokenError:
+            current_user = User.query.get(data['user_id'])
+        except:
             return jsonify({'error': 'Token is invalid'}), 401
-        except Exception as e:
-            return jsonify({'error': 'Token validation failed'}), 401
             
         return f(current_user, *args, **kwargs)
         
@@ -133,7 +124,7 @@ def register():
         return jsonify({'error': 'Email and password are required'}), 400
         
     # Check if user already exists
-    if db.session.query(User).filter_by(email=data['email']).first():
+    if User.query.filter_by(email=data['email']).first():
         return jsonify({'error': 'Email already registered'}), 400
         
     # Create new user
@@ -165,7 +156,7 @@ def login():
     if not data or 'email' not in data or 'password' not in data:
         return jsonify({'error': 'Email and password are required'}), 400
         
-    user = db.session.query(User).filter_by(email=data['email']).first()
+    user = User.query.filter_by(email=data['email']).first()
     
     if not user or not user.check_password(data['password']):
         return jsonify({'error': 'Invalid email or password'}), 401
@@ -195,22 +186,20 @@ def logout(current_user):
 @token_required
 def get_current_user(current_user):
     """Get current user info"""
-    if not current_user:
-        return jsonify({'error': 'User not found'}), 404
     return jsonify(current_user.to_dict())
 
 @app.route('/api/products', methods=['GET'])
 @token_required
 def get_products(current_user):
     """Get all tracked products for current user"""
-    products = db.session.query(Product).filter_by(user_id=current_user.id).all()
+    products = Product.query.filter_by(user_id=current_user.id).all()
     return jsonify([product.to_dict() for product in products])
 
 @app.route('/api/products/<int:product_id>', methods=['GET'])
 @token_required
 def get_product(current_user, product_id):
     """Get a specific product by ID"""
-    product = db.session.query(Product).filter_by(id=product_id, user_id=current_user.id).first()
+    product = Product.query.filter_by(id=product_id, user_id=current_user.id).first()
     if not product:
         return jsonify({'error': 'Product not found'}), 404
         
@@ -231,7 +220,7 @@ def add_product(current_user):
         return jsonify({'error': 'URL cannot be empty'}), 400
     
     # Check if product is already being tracked by this user
-    existing_product = db.session.query(Product).filter_by(url=url, user_id=current_user.id).first()
+    existing_product = Product.query.filter_by(url=url, user_id=current_user.id).first()
     if existing_product:
         return jsonify(existing_product.to_dict())
     
@@ -324,15 +313,15 @@ def add_product(current_user):
 @token_required
 def delete_product(current_user, product_id):
     """Delete a product and its related data"""
-    product = db.session.query(Product).filter_by(id=product_id, user_id=current_user.id).first()
+    product = Product.query.filter_by(id=product_id, user_id=current_user.id).first()
     if not product:
         return jsonify({'error': 'Product not found'}), 404
         
     # Delete related price history
-    db.session.query(PriceHistory).filter_by(product_id=product_id).delete()
+    PriceHistory.query.filter_by(product_id=product_id).delete()
     
     # Delete related price alerts
-    db.session.query(PriceAlert).filter_by(product_id=product_id).delete()
+    PriceAlert.query.filter_by(product_id=product_id).delete()
     
     # Delete product
     db.session.delete(product)
@@ -345,7 +334,7 @@ def delete_product(current_user, product_id):
 def get_price_history(current_user, product_id):
     """Get price history for a product"""
     # Check if product exists and belongs to user
-    product = db.session.query(Product).filter_by(id=product_id, user_id=current_user.id).first()
+    product = Product.query.filter_by(id=product_id, user_id=current_user.id).first()
     if not product:
         return jsonify({'error': 'Product not found'}), 404
     
@@ -357,7 +346,7 @@ def get_price_history(current_user, product_id):
     cutoff_date = get_ist_time() - timedelta(days=days)
     
     # Query price history
-    history = db.session.query(PriceHistory).filter_by(product_id=product_id).filter(
+    history = PriceHistory.query.filter_by(product_id=product_id).filter(
         PriceHistory.timestamp >= cutoff_date
     ).order_by(PriceHistory.timestamp).all()
     
@@ -367,7 +356,7 @@ def get_price_history(current_user, product_id):
 @token_required
 def refresh_product(current_user, product_id):
     """Manually refresh product data with enhanced error handling"""
-    product = db.session.query(Product).filter_by(id=product_id, user_id=current_user.id).first()
+    product = Product.query.filter_by(id=product_id, user_id=current_user.id).first()
     if not product:
         return jsonify({'error': 'Product not found'}), 404
     
@@ -513,11 +502,11 @@ def scraper_status(current_user):
 def rate_limit_info(current_user):
     """Get rate limiting information for the user"""
     # Count recent product additions and refreshes
-    recent_additions = db.session.query(Product).filter_by(user_id=current_user.id).filter(
+    recent_additions = Product.query.filter_by(user_id=current_user.id).filter(
         Product.created_at >= get_ist_time() - timedelta(hours=1)
     ).count()
     
-    recent_updates = db.session.query(Product).filter_by(user_id=current_user.id).filter(
+    recent_updates = Product.query.filter_by(user_id=current_user.id).filter(
         Product.last_updated >= get_ist_time() - timedelta(minutes=30)
     ).count()
     
@@ -544,7 +533,7 @@ def create_alert(current_user):
             return jsonify({'error': f'Missing required field: {field}'}), 400
     
     # Check if product exists and belongs to user
-    product = db.session.query(Product).filter_by(id=data['product_id'], user_id=current_user.id).first()
+    product = Product.query.filter_by(id=data['product_id'], user_id=current_user.id).first()
     if not product:
         return jsonify({'error': 'Product not found'}), 404
         
@@ -569,7 +558,7 @@ def create_alert(current_user):
 @token_required
 def delete_alert(current_user, alert_id):
     """Delete a price alert"""
-    alert = db.session.query(PriceAlert).filter_by(id=alert_id, user_id=current_user.id).first()
+    alert = PriceAlert.query.filter_by(id=alert_id, user_id=current_user.id).first()
     if not alert:
         return jsonify({'error': 'Alert not found'}), 404
         
@@ -583,11 +572,11 @@ def delete_alert(current_user, alert_id):
 def get_product_alerts(current_user, product_id):
     """Get all alerts for a specific product"""
     # Check if product exists and belongs to user
-    product = db.session.query(Product).filter_by(id=product_id, user_id=current_user.id).first()
+    product = Product.query.filter_by(id=product_id, user_id=current_user.id).first()
     if not product:
         return jsonify({'error': 'Product not found'}), 404
         
-    alerts = db.session.query(PriceAlert).filter_by(product_id=product_id, user_id=current_user.id).all()
+    alerts = PriceAlert.query.filter_by(product_id=product_id, user_id=current_user.id).all()
     
     return jsonify([alert.to_dict() for alert in alerts])
 
