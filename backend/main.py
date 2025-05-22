@@ -406,11 +406,5 @@ def test_email_alert(current_user):
         return jsonify({'error': 'Failed to send test email'}), 500
 
 if __name__ == '__main__':
-    # Ensure the instance folder exists
-    try:
-        os.makedirs(app.instance_path)
-    except OSError:
-        pass
-    
-    # Start the Flask app
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    port = int(os.getenv('PORT', 5000))
+    app.run(debug=False, host='0.0.0.0', port=port)
