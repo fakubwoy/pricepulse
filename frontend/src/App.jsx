@@ -3,7 +3,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { AlertTriangle, Trash2, RefreshCw, Plus, ShoppingCart, Bell, ChevronRight, ExternalLink, TrendingDown, Zap, User, LogIn, LogOut, UserPlus } from 'lucide-react';
 import './App.css';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 function App() {
   const [products, setProducts] = useState([]);

@@ -17,8 +17,15 @@ from email_service import check_price_alerts, send_email_alert
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
-
+CORS(app, origins=[     # Enable CORS for all routes
+    "http://localhost:3000",  # Development
+    "https://your-frontend-url.onrender.com"  # Production (update this after frontend deployment)
+])
+  
+DATABASE_URL = os.getenv('DATABASE_URL')
+if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
+    DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+    
 # Configure database
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///pricepulse.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -43,10 +50,11 @@ init_db(app)
 from database import db
 
 # Create a scheduler for updating prices and checking alerts
-scheduler = BackgroundScheduler()
-scheduler.add_job(func=update_all_products, trigger="interval", minutes=60)
-scheduler.add_job(func=check_price_alerts, trigger="interval", minutes=15)
-scheduler.start()
+if os.getenv('RENDER'):  # Only run scheduler on Render
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(func=update_all_products, trigger="interval", minutes=60)
+    scheduler.add_job(func=check_price_alerts, trigger="interval", minutes=15)
+    scheduler.start()
 
 @login_manager.user_loader
 def load_user(user_id):

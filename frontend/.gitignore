@@ -25,3 +25,5 @@ dist-ssr
 
 ../backend/__pycache__
 ../backend/pricepulse.db
+
+/src/.env
