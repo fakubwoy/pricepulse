@@ -98,7 +98,11 @@ def token_required(f):
         token = None
         
         if 'Authorization' in request.headers:
-            token = request.headers['Authorization'].split(" ")[1]
+            auth_header = request.headers['Authorization']
+            try:
+                token = auth_header.split(" ")[1]  # Bearer <token>
+            except IndexError:
+                return jsonify({'error': 'Invalid authorization header format'}), 401
             
         if not token:
             return jsonify({'error': 'Token is missing'}), 401
@@ -106,8 +110,18 @@ def token_required(f):
         try:
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
             current_user = User.query.get(data['user_id'])
-        except:
+            
+            # Check if user exists
+            if not current_user:
+                return jsonify({'error': 'User not found'}), 401
+                
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token has expired'}), 401
+        except jwt.InvalidTokenError:
             return jsonify({'error': 'Token is invalid'}), 401
+        except Exception as e:
+            print(f"Token validation error: {str(e)}")
+            return jsonify({'error': 'Token validation failed'}), 401
             
         return f(current_user, *args, **kwargs)
         
