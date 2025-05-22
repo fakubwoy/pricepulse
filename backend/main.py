@@ -31,17 +31,37 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///pricepulse.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 
+# Define IST timezone (UTC+5:30)
+IST = timezone(timedelta(hours=5, minutes=30))
+
 # Initialize Flask-Login
 login_manager = LoginManager()
 login_manager.init_app(app)
+
 def get_ist_time():
     """Get current time in IST timezone"""
     return datetime.now(IST)
 
-# Also, make sure you have these imports at the top of your main.py:
-from datetime import datetime, timedelta, timezone
-# Define IST timezone (UTC+5:30)
-IST = timezone(timedelta(hours=5, minutes=30))
+def make_timezone_aware(dt, tz=IST):
+    """Convert a naive datetime to timezone-aware datetime"""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=tz)
+    return dt
+
+def safe_datetime_subtract(dt1, dt2):
+    """Safely subtract two datetimes, handling timezone awareness"""
+    if dt1 is None or dt2 is None:
+        return None
+    
+    # Make both datetimes timezone-aware if they aren't already
+    if dt1.tzinfo is None:
+        dt1 = make_timezone_aware(dt1)
+    if dt2.tzinfo is None:
+        dt2 = make_timezone_aware(dt2)
+    
+    return dt1 - dt2
 
 # Initialize the database
 init_db(app)
@@ -341,11 +361,14 @@ def refresh_product(current_user, product_id):
         return jsonify({'error': 'Product not found'}), 404
     
     # Check if product was recently updated to avoid spam
-    if product.last_updated and (get_ist_time() - product.last_updated).total_seconds() < 300:  # 5 minutes
-        return jsonify({
-            'error': 'Product was recently updated. Please wait a few minutes before refreshing again.',
-            'last_updated': product.last_updated.isoformat()
-        }), 429
+    # Use safe datetime subtraction to handle timezone issues
+    if product.last_updated:
+        time_diff = safe_datetime_subtract(get_ist_time(), product.last_updated)
+        if time_diff and time_diff.total_seconds() < 300:  # 5 minutes
+            return jsonify({
+                'error': 'Product was recently updated. Please wait a few minutes before refreshing again.',
+                'last_updated': product.last_updated.isoformat() if product.last_updated else None
+            }), 429
     
     scraper = AmazonScraper()
     
@@ -442,6 +465,7 @@ def refresh_product(current_user, product_id):
         return jsonify({
             'error': 'An unexpected error occurred while refreshing the product. Please try again later.'
         }), 500
+
 @app.route('/api/scraper/status', methods=['GET'])
 @token_required
 def scraper_status(current_user):
