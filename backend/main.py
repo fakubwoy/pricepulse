@@ -50,10 +50,16 @@ init_db(app)
 from database import db
 
 # Create a scheduler for updating prices and checking alerts
+# Replace the scheduler section in main.py with this:
 if os.getenv('RENDER'):  # Only run scheduler on Render
+    def run_with_context(func):
+        """Wrapper to run scheduled jobs within Flask app context"""
+        with app.app_context():
+            func()
+    
     scheduler = BackgroundScheduler()
-    scheduler.add_job(func=update_all_products, trigger="interval", minutes=60)
-    scheduler.add_job(func=check_price_alerts, trigger="interval", minutes=15)
+    scheduler.add_job(func=lambda: run_with_context(update_all_products), trigger="interval", minutes=60)
+    scheduler.add_job(func=lambda: run_with_context(check_price_alerts), trigger="interval", minutes=15)
     scheduler.start()
 
 @login_manager.user_loader
