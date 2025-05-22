@@ -7,38 +7,19 @@ import random
 from models import Product, PriceHistory, PriceAlert
 from database import db
 import urllib.parse
+import os
 
 class AmazonScraper:
     def __init__(self):
-        # Rotate between multiple user agents
+        # ScrapingBee is the most reliable solution for production
+        self.scrapingbee_api_key = os.getenv('SCRAPINGBEE_API_KEY')
+        
+        # Fallback user agents for direct requests (backup only)
         self.user_agents = [
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:122.0) Gecko/20100101 Firefox/122.0',
             'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
         ]
-        
-        # List of proxy services (you'd need to implement actual proxy rotation)
-        self.proxies = []  # Add your proxy list here if available
-        
-    def get_headers(self):
-        """Get randomized headers to avoid detection"""
-        return {
-            'User-Agent': random.choice(self.user_agents),
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
-            'Sec-Fetch-User': '?1',
-            'Cache-Control': 'max-age=0',
-            'DNT': '1',
-            'Sec-GPC': '1'
-        }
     
     def is_valid_amazon_url(self, url):
         """Validate if URL is an Amazon product URL"""
@@ -62,79 +43,76 @@ class AmazonScraper:
                 return f"https://www.amazon.com/dp/{asin}"
         return url
     
-    def make_request_with_retry(self, url, max_retries=3):
-        """Make request with retry logic and anti-detection measures"""
-        session = requests.Session()
+    def scrape_with_scrapingbee(self, url):
+        """Scrape using ScrapingBee API - Most reliable method"""
+        if not self.scrapingbee_api_key:
+            return None
+            
+        api_url = "https://app.scrapingbee.com/api/v1/"
+        params = {
+            'api_key': self.scrapingbee_api_key,
+            'url': url,
+            'render_js': 'false',  # Faster without JS rendering
+            'premium_proxy': 'true',  # Use premium proxies
+            'country_code': 'US',  # Use US proxies
+            'wait': 2000,  # Wait 2 seconds for page load
+            'wait_for': 'networkidle'  # Wait for network to be idle
+        }
         
-        for attempt in range(max_retries):
-            try:
-                # Random delay between requests
-                if attempt > 0:
-                    delay = random.uniform(5, 15) * (attempt + 1)
-                    print(f"Retrying in {delay:.1f} seconds...")
-                    time.sleep(delay)
-                else:
-                    time.sleep(random.uniform(2, 5))
+        try:
+            print(f"Making ScrapingBee request to: {url}")
+            response = requests.get(api_url, params=params, timeout=45)
+            
+            if response.status_code == 200:
+                print("ScrapingBee request successful")
+                return response.text
+            elif response.status_code == 422:
+                return {'error': 'Invalid URL or blocked by Amazon'}
+            elif response.status_code == 401:
+                return {'error': 'Invalid ScrapingBee API key'}
+            elif response.status_code == 403:
+                return {'error': 'ScrapingBee quota exceeded'}
+            else:
+                print(f"ScrapingBee error: HTTP {response.status_code}")
+                return None
                 
-                # Get fresh headers for each attempt
-                headers = self.get_headers()
-                session.headers.update(headers)
-                
-                # Make request with timeout
-                response = session.get(url, timeout=20)
-                
-                # Check response
-                if response.status_code == 200:
-                    # Check if we got blocked
-                    content_lower = response.text.lower()
-                    if any(keyword in content_lower for keyword in ['robot', 'captcha', 'blocked', 'access denied']):
-                        print(f"Attempt {attempt + 1}: Detected blocking, retrying...")
-                        continue
-                    return response
-                elif response.status_code == 503:
-                    print(f"Attempt {attempt + 1}: Service unavailable (503)")
-                    continue
-                elif response.status_code == 429:
-                    print(f"Attempt {attempt + 1}: Rate limited (429)")
-                    continue
-                else:
-                    print(f"Attempt {attempt + 1}: HTTP {response.status_code}")
-                    if attempt == max_retries - 1:
-                        return response
-                        
-            except requests.exceptions.Timeout:
-                print(f"Attempt {attempt + 1}: Request timed out")
-            except requests.exceptions.ConnectionError:
-                print(f"Attempt {attempt + 1}: Connection error")
-            except Exception as e:
-                print(f"Attempt {attempt + 1}: Unexpected error: {str(e)}")
-        
-        return None
+        except requests.exceptions.Timeout:
+            return {'error': 'ScrapingBee request timed out'}
+        except Exception as e:
+            print(f"ScrapingBee error: {str(e)}")
+            return None
     
     def scrape_product(self, url):
-        """Scrape product details from Amazon URL with enhanced anti-detection"""
+        """Main scraping method using ScrapingBee"""
         if not self.is_valid_amazon_url(url):
             return {'error': 'Invalid Amazon URL. Please provide a valid Amazon product URL.'}
         
         normalized_url = self.normalize_url(url)
         
-        # Make request with retry logic
-        response = self.make_request_with_retry(normalized_url)
+        # Check if ScrapingBee API key is available
+        if not self.scrapingbee_api_key:
+            return {
+                'error': 'ScrapingBee API key not configured. Please add SCRAPINGBEE_API_KEY to your environment variables. Sign up at scrapingbee.com for reliable Amazon scraping.'
+            }
         
-        if not response:
-            return {'error': 'Failed to fetch product page after multiple attempts. Amazon may be blocking requests.'}
+        # Get HTML content using ScrapingBee
+        html_content = self.scrape_with_scrapingbee(normalized_url)
         
-        if response.status_code == 404:
-            return {'error': 'Product not found. Please check the URL.'}
-        elif response.status_code != 200:
-            return {'error': f'Failed to fetch product page: HTTP {response.status_code}'}
+        if isinstance(html_content, dict) and 'error' in html_content:
+            return html_content
+        
+        if not html_content:
+            return {
+                'error': 'Failed to fetch product page. This could be due to network issues or Amazon blocking the request.'
+            }
+        
+        # Parse the HTML content
+        soup = BeautifulSoup(html_content, 'html.parser')
         
         # Check for blocking indicators
-        content_lower = response.text.lower()
+        content_lower = html_content.lower()
         if 'robot' in content_lower or 'captcha' in content_lower:
-            return {'error': 'Amazon is requesting CAPTCHA verification. This may be due to too many requests. Please try again later or consider using a VPN.'}
-        
-        soup = BeautifulSoup(response.text, 'html.parser')
+            return {'error': 'Amazon is requesting CAPTCHA verification. Please try again in a few minutes.'}
         
         # Extract product details
         product_data = {
@@ -152,12 +130,9 @@ class AmazonScraper:
         
         # Validate that we got essential data
         if not product_data['name']:
-            return {'error': 'Could not extract product information. The page structure may have changed or access was restricted.'}
+            return {'error': 'Could not extract product information. The page structure may have changed or the product is unavailable.'}
         
-        # If no price found, try alternative methods
-        if not product_data['current_price']:
-            product_data['current_price'] = self._extract_price_alternative(soup)
-        
+        print(f"Successfully extracted product: {product_data['name']}")
         return product_data
     
     def _extract_name(self, soup):
@@ -177,13 +152,13 @@ class AmazonScraper:
             name_elem = soup.select_one(selector)
             if name_elem:
                 name = name_elem.get_text().strip()
-                if name and len(name) > 5:  # Ensure it's a meaningful title
+                if name and len(name) > 5:
                     return name
         
         return None
     
     def _extract_image(self, soup):
-        """Extract product image URL with multiple selectors"""
+        """Extract product image URL"""
         selectors = [
             '#landingImage',
             '#imgBlkFront',
@@ -197,7 +172,7 @@ class AmazonScraper:
         for selector in selectors:
             image = soup.select_one(selector)
             if image:
-                for attr in ['data-old-hires', 'src', 'data-src', 'data-a-dynamic-image']:
+                for attr in ['data-old-hires', 'src', 'data-src']:
                     img_url = image.get(attr)
                     if img_url and img_url.startswith('http'):
                         return img_url
@@ -205,8 +180,8 @@ class AmazonScraper:
         return None
     
     def _extract_current_price(self, soup):
-        """Extract current price with improved selectors"""
-        # Method 1: Try the standard price structure
+        """Extract current price"""
+        # Method 1: Standard price structure
         price_whole = soup.select_one('.a-price-whole')
         price_fraction = soup.select_one('.a-price-fraction')
         
@@ -218,7 +193,7 @@ class AmazonScraper:
             except (ValueError, AttributeError):
                 pass
         
-        # Method 2: Try various price selectors
+        # Method 2: Various price selectors
         price_selectors = [
             '.a-price .a-offscreen',
             '#priceblock_ourprice',
@@ -226,9 +201,7 @@ class AmazonScraper:
             '.a-price-current .a-offscreen',
             '.a-text-price .a-offscreen',
             '.a-price.a-text-price.a-size-medium.apexPriceToPay .a-offscreen',
-            '.a-price-range .a-offscreen',
-            'span.a-price-symbol + span.a-price-whole',
-            '.a-color-price'
+            '.a-price-range .a-offscreen'
         ]
         
         for selector in price_selectors:
@@ -239,34 +212,10 @@ class AmazonScraper:
                     price_match = re.search(r'[\d,]+\.?\d*', price_text.replace(',', ''))
                     if price_match:
                         price = float(price_match.group().replace(',', ''))
-                        if price > 0:  # Ensure valid price
+                        if price > 0:
                             return price
                 except (ValueError, AttributeError):
                     continue
-        
-        return None
-    
-    def _extract_price_alternative(self, soup):
-        """Alternative price extraction method"""
-        # Look for price in script tags or data attributes
-        scripts = soup.find_all('script')
-        for script in scripts:
-            if script.string:
-                # Look for price in JSON data
-                price_matches = re.findall(r'"price"[:\s]*"?([0-9,]+\.?[0-9]*)"?', script.string)
-                if price_matches:
-                    try:
-                        return float(price_matches[0].replace(',', ''))
-                    except ValueError:
-                        continue
-        
-        # Look in meta tags
-        price_meta = soup.find('meta', {'property': 'product:price:amount'})
-        if price_meta and price_meta.get('content'):
-            try:
-                return float(price_meta['content'])
-            except ValueError:
-                pass
         
         return None
     
@@ -295,7 +244,6 @@ class AmazonScraper:
     
     def _extract_description(self, soup):
         """Extract product description"""
-        # Try feature bullets first
         feature_bullets = soup.select('#feature-bullets ul li')
         if feature_bullets:
             bullets = []
@@ -304,13 +252,12 @@ class AmazonScraper:
                 if text and len(text) > 10 and not text.startswith('Make sure'):
                     bullets.append(text)
             if bullets:
-                return '\n'.join(bullets[:3])  # Limit to first 3 bullets
+                return '\n'.join(bullets[:3])
         
         desc_selectors = [
             '#productDescription p',
             '#aplus_feature_div',
-            '#feature-bullets',
-            '.a-unordered-list.a-nostyle.a-vertical.a-spacing-none'
+            '#feature-bullets'
         ]
         
         for selector in desc_selectors:
@@ -318,7 +265,7 @@ class AmazonScraper:
             if description:
                 desc_text = description.get_text().strip()
                 if desc_text and len(desc_text) > 20:
-                    return desc_text[:300]  # Limit length
+                    return desc_text[:300]
         
         return None
     
@@ -328,8 +275,7 @@ class AmazonScraper:
             'span[data-hook="rating-out-of-text"]',
             '#acrPopover .a-icon-alt',
             '.a-icon-star .a-icon-alt',
-            'i[data-hook="average-star-rating"] .a-icon-alt',
-            '.a-icon-star-small .a-icon-alt'
+            'i[data-hook="average-star-rating"] .a-icon-alt'
         ]
         
         for selector in rating_selectors:
@@ -352,8 +298,7 @@ class AmazonScraper:
         availability_selectors = [
             '#availability span',
             '#availabilityInsideBuyBox_feature_div span',
-            '.a-color-success',
-            '.a-color-price'
+            '.a-color-success'
         ]
         
         for selector in availability_selectors:
@@ -362,11 +307,11 @@ class AmazonScraper:
                 text = availability.get_text().strip().lower()
                 if any(phrase in text for phrase in ['in stock', 'available', 'ships from']):
                     return True
-                elif any(phrase in text for phrase in ['out of stock', 'unavailable', 'currently unavailable']):
+                elif any(phrase in text for phrase in ['out of stock', 'unavailable']):
                     return False
         
         # Check for add to cart button
-        if soup.select_one('#add-to-cart-button, input[name="submit.add-to-cart"], #buy-now-button'):
+        if soup.select_one('#add-to-cart-button, input[name="submit.add-to-cart"]'):
             return True
         
         return False
@@ -386,23 +331,23 @@ class AmazonScraper:
                 if currency_match:
                     return currency_match.group(1)
         
-        return "₹"  # Default
+        return "₹"
 
 
 def update_all_products():
-    """Update all products in the database with enhanced error handling"""
+    """Update all products in the database"""
     scraper = AmazonScraper()
     products = Product.query.all()
     
     for product in products:
-        # Skip products updated in the last 2 hours to reduce requests
+        # Skip products updated in the last 2 hours
         if product.last_updated and (datetime.utcnow() - product.last_updated).total_seconds() < 7200:
             continue
         
         print(f"Updating product: {product.name}")
         
-        # Add delay between products to avoid rate limiting
-        time.sleep(random.uniform(3, 8))
+        # Add delay between products to respect rate limits
+        time.sleep(random.uniform(5, 10))
         
         data = scraper.scrape_product(product.url)
         
@@ -414,7 +359,7 @@ def update_all_products():
                 product.image = data['image']
             product.last_updated = datetime.utcnow()
             
-            # Only add price history if price has changed
+            # Update price if changed
             if data['current_price'] and data['current_price'] != product.current_price:
                 old_price = product.current_price
                 product.current_price = data['current_price']
@@ -425,20 +370,13 @@ def update_all_products():
                 
                 print(f"Price updated: {old_price} -> {data['current_price']}")
                 
-                # Check if any price alerts should be triggered
+                # Check price alerts
                 check_price_alerts(product)
             
-            # Update additional attributes
-            if data.get('original_price'):
-                product.original_price = data['original_price']
-            if data.get('currency'):
-                product.currency = data['currency']
-            if data.get('description'):
-                product.description = data['description']
-            if data.get('rating'):
-                product.rating = data['rating']
-            if data.get('in_stock') is not None:
-                product.in_stock = data['in_stock']
+            # Update other attributes
+            for attr in ['original_price', 'currency', 'description', 'rating', 'in_stock']:
+                if data.get(attr) is not None:
+                    setattr(product, attr, data[attr])
         else:
             print(f"Error updating product {product.name}: {data['error']}")
     
@@ -455,8 +393,7 @@ def check_price_alerts(product):
     ).all()
     
     for alert in active_alerts:
-        print(f"ALERT: Product {product.name} price dropped to {product.current_price}, "
-              f"below target of {alert.target_price}")
+        print(f"ALERT: Product {product.name} price dropped to {product.current_price}")
         
         # Import here to avoid circular imports
         from email_service import send_price_alert_email
