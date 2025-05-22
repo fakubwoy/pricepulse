@@ -398,10 +398,24 @@ def refresh_product(current_user, product_id):
             error_msg = product_data['error']
             if 'captcha' in error_msg.lower() or 'robot' in error_msg.lower():
                 return jsonify({
-                    'error': 'Amazon is currently blocking requests. Please try again later or use a VPN.'
-                }), 503  # Changed from 429 to 503 (Service Unavailable)
+                    'error': 'Amazon is currently blocking requests. Please try again later or use a VPN.',
+                    'details': error_msg
+                }), 503  # Service Unavailable instead of 400
+            elif 'not found' in error_msg.lower() or '404' in error_msg:
+                return jsonify({
+                    'error': 'Product page not found. The product may have been removed or the URL is invalid.',
+                    'details': error_msg
+                }), 404
+            elif 'timeout' in error_msg.lower():
+                return jsonify({
+                    'error': 'Request timed out. Please try again in a moment.',
+                    'details': error_msg
+                }), 408
             else:
-                return jsonify({'error': error_msg}), 400
+                return jsonify({
+                    'error': 'Unable to refresh product data at this time.',
+                    'details': error_msg
+                }), 503  # Changed from 400 to 503
         
         # Update product with new data
         updated = False
@@ -418,18 +432,19 @@ def refresh_product(current_user, product_id):
         product.last_updated = get_ist_time()
         
         # Handle price update
-        if product_data.get('current_price') and product_data['current_price'] != product.current_price:
+        if product_data.get('current_price') is not None and product_data['current_price'] != product.current_price:
             old_price = product.current_price
             product.current_price = product_data['current_price']
             updated = True
             
-            # Add to price history
-            price_history = PriceHistory(product_id=product.id, price=product_data['current_price'])
-            db.session.add(price_history)
-            
-            # Check alerts immediately if price decreased
-            if old_price and product_data['current_price'] < old_price:
-                check_price_alerts()
+            # Add to price history only if price is valid
+            if product_data['current_price'] > 0:
+                price_history = PriceHistory(product_id=product.id, price=product_data['current_price'])
+                db.session.add(price_history)
+                
+                # Check alerts immediately if price decreased
+                if old_price and product_data['current_price'] < old_price:
+                    check_price_alerts()
         
         # Update additional attributes if available
         if product_data.get('original_price'):
@@ -474,9 +489,10 @@ def refresh_product(current_user, product_id):
             pass
             
         return jsonify({
-            'error': 'An unexpected error occurred while refreshing the product. Please try again later.'
+            'error': 'An unexpected error occurred while refreshing the product. Please try again later.',
+            'details': str(e)
         }), 500
-
+        
 @app.route('/api/scraper/status', methods=['GET'])
 @token_required
 def scraper_status(current_user):
