@@ -12,7 +12,7 @@ load_dotenv()
 # Import our modules
 from database import init_db
 from models import User, Product, PriceHistory, PriceAlert
-from scraper import AmazonScraper, update_all_products
+from scraper import AmazonScraper, update_all_products,store_daily_prices
 from email_service import check_price_alerts, send_email_alert
 
 # Initialize Flask app
@@ -80,6 +80,12 @@ if os.getenv('RENDER'):  # Only run scheduler on Render
     scheduler = BackgroundScheduler()
     scheduler.add_job(func=lambda: run_with_context(update_all_products), trigger="interval", minutes=60)
     scheduler.add_job(func=lambda: run_with_context(check_price_alerts), trigger="interval", minutes=15)
+    scheduler.add_job(
+        func=lambda: run_with_context(store_daily_prices), 
+        trigger="cron", 
+        hour=0, 
+        minute=30  # Run at 12:30 AM IST daily
+    )
     scheduler.start()
 
 @login_manager.user_loader
@@ -361,13 +367,18 @@ def refresh_product(current_user, product_id):
         return jsonify({'error': 'Product not found'}), 404
     
     # Check if product was recently updated to avoid spam
-    # Use safe datetime subtraction to handle timezone issues
     if product.last_updated:
-        time_diff = safe_datetime_subtract(get_ist_time(), product.last_updated)
-        if time_diff and time_diff.total_seconds() < 300:  # 5 minutes
+        # Convert both to timezone-aware datetimes for comparison
+        current_time = get_ist_time()
+        last_updated = make_timezone_aware(product.last_updated)
+        time_diff = current_time - last_updated
+        
+        # Only block if updated within last 2 minutes (reduced from 5 minutes)
+        if time_diff.total_seconds() < 120:  
             return jsonify({
-                'error': 'Product was recently updated. Please wait a few minutes before refreshing again.',
-                'last_updated': product.last_updated.isoformat() if product.last_updated else None
+                'error': 'Product was recently updated. Please wait a moment before refreshing again.',
+                'last_updated': last_updated.isoformat(),
+                'retry_after_seconds': int(120 - time_diff.total_seconds())
             }), 429
     
     scraper = AmazonScraper()
@@ -388,7 +399,7 @@ def refresh_product(current_user, product_id):
             if 'captcha' in error_msg.lower() or 'robot' in error_msg.lower():
                 return jsonify({
                     'error': 'Amazon is currently blocking requests. Please try again later or use a VPN.'
-                }), 429
+                }), 503  # Changed from 429 to 503 (Service Unavailable)
             else:
                 return jsonify({'error': error_msg}), 400
         

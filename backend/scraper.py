@@ -669,7 +669,7 @@ class AmazonScraper:
 
 
 def update_all_products():
-    """Update all products in the database with improved rate limiting"""
+    """Update all products in the database with improved rate limiting and daily price storage"""
     scraper = AmazonScraper()
     products = Product.query.all()
     
@@ -677,8 +677,31 @@ def update_all_products():
     random.shuffle(products)
     
     for i, product in enumerate(products):
-        # Skip products updated in the last 4 hours
-        if product.last_updated and (datetime.utcnow() - product.last_updated).total_seconds() < 14400:
+        # Check if product needs updating
+        needs_update = False
+        
+        if not product.last_updated:
+            needs_update = True
+        else:
+            # Check if it's been more than 4 hours since last update
+            time_since_update = (datetime.utcnow() - product.last_updated).total_seconds()
+            if time_since_update >= 14400:  # 4 hours
+                needs_update = True
+            else:
+                # Check if we need to store today's price (daily price storage)
+                last_price_history = PriceHistory.query.filter_by(product_id=product.id).order_by(PriceHistory.timestamp.desc()).first()
+                
+                if last_price_history:
+                    # Check if the last price entry is from a different day
+                    last_entry_date = last_price_history.timestamp.date()
+                    today = datetime.utcnow().date()
+                    
+                    if last_entry_date < today:
+                        # Store today's price even if it hasn't changed
+                        needs_update = True
+                        print(f"Storing daily price for {product.name} (last entry: {last_entry_date})")
+        
+        if not needs_update:
             continue
         
         print(f"Updating product {i+1}/{len(products)}: {product.name}")
@@ -698,19 +721,30 @@ def update_all_products():
                 product.image = data['image']
             product.last_updated = datetime.utcnow()
             
-            # Update price if changed
-            if data['current_price'] and data['current_price'] != product.current_price:
-                old_price = product.current_price
-                product.current_price = data['current_price']
+            # Always store price entry for daily tracking
+            price_to_store = data.get('current_price', product.current_price)
+            
+            if price_to_store and price_to_store > 0:
+                # Check if we already have a price entry for today
+                today = datetime.utcnow().date()
+                today_price_entry = PriceHistory.query.filter_by(product_id=product.id).filter(
+                    db.func.date(PriceHistory.timestamp) == today
+                ).first()
                 
-                # Add to price history
-                price_history = PriceHistory(product_id=product.id, price=data['current_price'])
-                db.session.add(price_history)
+                if not today_price_entry:
+                    # Add new price history entry for today
+                    price_history = PriceHistory(product_id=product.id, price=price_to_store)
+                    db.session.add(price_history)
+                    print(f"Added daily price entry: {price_to_store}")
                 
-                print(f"Price updated: {old_price} -> {data['current_price']}")
-                
-                # Check price alerts
-                check_price_alerts(product)
+                # Update current price if it has changed
+                if data.get('current_price') and data['current_price'] != product.current_price:
+                    old_price = product.current_price
+                    product.current_price = data['current_price']
+                    print(f"Price updated: {old_price} -> {data['current_price']}")
+                    
+                    # Check price alerts
+                    check_price_alerts(product)
             
             # Update other attributes
             for attr in ['original_price', 'currency', 'description', 'rating', 'in_stock']:
@@ -724,6 +758,10 @@ def update_all_products():
         else:
             print(f"Error updating product {product.name}: {data['error']}")
             
+            # Update the last_updated timestamp even if scraping failed
+            product.last_updated = datetime.utcnow()
+            db.session.commit()
+            
             # If we get rate limited, wait longer
             if 'rate limit' in data['error'].lower():
                 print("Rate limited detected, waiting 5 minutes...")
@@ -731,7 +769,30 @@ def update_all_products():
     
     print("Finished updating all products")
 
+# Add this new function to scraper.py
 
+def store_daily_prices():
+    """Store current prices for all products to maintain daily price history"""
+    from models import Product, PriceHistory
+    from database import db
+    
+    products = Product.query.all()
+    today = datetime.utcnow().date()
+    
+    for product in products:
+        # Check if we already have a price entry for today
+        today_price_entry = PriceHistory.query.filter_by(product_id=product.id).filter(
+            db.func.date(PriceHistory.timestamp) == today
+        ).first()
+        
+        if not today_price_entry and product.current_price and product.current_price > 0:
+            # Add price history entry for today
+            price_history = PriceHistory(product_id=product.id, price=product.current_price)
+            db.session.add(price_history)
+            print(f"Stored daily price for {product.name}: {product.current_price}")
+    
+    db.session.commit()
+    print(f"Finished storing daily prices for {len(products)} products")
 def check_price_alerts(product):
     """Check if any price alerts should be triggered for a product"""
     active_alerts = PriceAlert.query.filter_by(
