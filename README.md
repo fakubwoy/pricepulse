@@ -49,7 +49,7 @@ cd frontend
 npm install
 npm run dev
 ```
-## 🔔 Email Alerts
+##  Email Alerts
 
 Add a `.env` file in the `backend/` directory with:
 
