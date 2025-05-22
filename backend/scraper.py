@@ -10,17 +10,10 @@ from database import db
 class AmazonScraper:
     def __init__(self):
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept-Encoding': 'gzip, deflate, br',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-            'Sec-Ch-Ua-Mobile': '?0',
-            'Sec-Ch-Ua-Platform': '"Windows"',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
-            'Upgrade-Insecure-Requests': '1'
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
         }
     
     def is_valid_amazon_url(self, url):
@@ -85,7 +78,10 @@ class AmazonScraper:
             print(f"Error scraping product: {str(e)}")
             return {'error': f'Error scraping product: {str(e)}'}
     
-    
+    def _extract_name(self, soup):
+        """Extract product name"""
+        name_elem = soup.find('span', {'id': 'productTitle'})
+        return name_elem.get_text().strip() if name_elem else None
     
     def _extract_image(self, soup):
         """Extract product image URL"""
