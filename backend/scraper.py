@@ -85,50 +85,18 @@ class AmazonScraper:
             print(f"Error scraping product: {str(e)}")
             return {'error': f'Error scraping product: {str(e)}'}
     
-    def _extract_name(self, soup):
-        """Extract product name"""
-        # Try multiple selectors for product title
-        selectors = [
-            '#productTitle',
-            '.product-title',
-            'h1.a-size-large',
-            'h1[data-automation-id="product-title"]'
-        ]
-        
-        for selector in selectors:
-            name_elem = soup.select_one(selector)
-            if name_elem:
-                return name_elem.get_text().strip()
-        return None
+    
     
     def _extract_image(self, soup):
         """Extract product image URL"""
-        # Try multiple image selectors
-        selectors = [
-            '#landingImage',
-            '#imgBlkFront', 
-            '#main-image-container img',
-            '.a-dynamic-image',
-            'img[data-old-hires]'
-        ]
-        
-        for selector in selectors:
-            image = soup.select_one(selector)
-            if image:
-                # Try different attributes for image URL
-                for attr in ['data-old-hires', 'data-a-dynamic-image', 'src']:
-                    if image.get(attr):
-                        img_url = image.get(attr)
-                        # If it's a JSON string (data-a-dynamic-image), parse it
-                        if img_url.startswith('{'):
-                            try:
-                                import json
-                                img_data = json.loads(img_url)
-                                return list(img_data.keys())[0]  # Get first image URL
-                            except:
-                                continue
-                        return img_url
-        return None
+        # Try multiple image selectors as Amazon's structure can vary
+        image = soup.find('img', {'id': 'landingImage'})
+        if not image:
+            image = soup.find('img', {'id': 'imgBlkFront'})
+        if not image:
+            image = soup.select_one('#main-image-container img')
+            
+        return image.get('src') or image.get('data-old-hires') if image else None
     
     def _extract_current_price(self, soup):
         """Extract current price"""
@@ -183,32 +151,16 @@ class AmazonScraper:
     
     def _extract_description(self, soup):
         """Extract product description"""
-        # Try multiple description selectors
-        desc_selectors = [
-            '#productDescription p',
-            '#feature-bullets ul',
-            '#aplus_feature_div',
-            '.a-expander-content p'
-        ]
+        description = soup.find('div', {'id': 'productDescription'})
+        if description:
+            return description.get_text().strip()
         
-        for selector in desc_selectors:
-            desc_elem = soup.select_one(selector)
-            if desc_elem:
-                desc_text = desc_elem.get_text().strip()
-                if len(desc_text) > 20:  # Only return if meaningful content
-                    return desc_text[:500]  # Limit length
-        
-        # Try feature bullets as fallback
-        feature_bullets = soup.select('#feature-bullets li span.a-list-item')
+        # Try feature bullets
+        feature_bullets = soup.find('div', {'id': 'feature-bullets'})
         if feature_bullets:
-            bullets = []
-            for bullet in feature_bullets[:5]:  # Limit to first 5 bullets
-                text = bullet.get_text().strip()
-                if text and len(text) > 5:
-                    bullets.append(text)
-            if bullets:
-                return ' | '.join(bullets)
-                
+            bullet_points = feature_bullets.find_all('li')
+            return '\n'.join([bullet.get_text().strip() for bullet in bullet_points])
+            
         return None
     
     def _extract_rating(self, soup):
