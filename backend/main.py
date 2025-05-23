@@ -11,6 +11,7 @@ import logging
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
 import threading
+import time
 import atexit
 load_dotenv()
 
@@ -76,7 +77,121 @@ init_db(app)
 
 # Import db after initialization
 from database import db
+def continuous_hourly_refresh():
+    """Standalone function that runs continuously and refreshes all products every hour"""
+    print("[HOURLY_REFRESH] Starting continuous hourly refresh service...")
+    
+    while True:
+        try:
+            # Wait for 1 hour (3600 seconds)
+            time.sleep(3600)
+            
+            with app.app_context():
+                print("[HOURLY_REFRESH] Starting hourly refresh cycle...")
+                
+                from scraper import AmazonScraper
+                
+                # Get all products from database
+                all_products = Product.query.all()
+                
+                if not all_products:
+                    print("[HOURLY_REFRESH] No products found in database")
+                    continue
+                    
+                print(f"[HOURLY_REFRESH] Found {len(all_products)} products to refresh")
+                scraper = AmazonScraper()
+                
+                success_count = 0
+                error_count = 0
+                
+                for product in all_products:
+                    try:
+                        print(f"[HOURLY_REFRESH] Refreshing: {product.name[:50]}...")
+                        
+                        # Scrape current product data
+                        product_data = scraper.scrape_product(product.url)
+                        
+                        if 'error' not in product_data:
+                            # Update product data
+                            if product_data.get('current_price') is not None:
+                                old_price = product.current_price
+                                product.current_price = product_data['current_price']
+                                
+                                # Update other fields if available
+                                if product_data.get('name'):
+                                    product.name = product_data['name']
+                                if product_data.get('image'):
+                                    product.image = product_data['image']
+                                if product_data.get('in_stock') is not None:
+                                    product.in_stock = product_data['in_stock']
+                                if product_data.get('rating'):
+                                    product.rating = product_data['rating']
+                                    
+                                product.last_updated = get_ist_time()
+                                
+                                # Always create a history entry, regardless of price change
+                                price_history = PriceHistory(
+                                    product_id=product.id,
+                                    price=product_data['current_price']
+                                )
+                                db.session.add(price_history)
+                                
+                                success_count += 1
+                                print(f"[HOURLY_REFRESH] ✅ Updated {product.name[:30]} - Price: {product_data['current_price']}")
+                                
+                                # Check alerts if price decreased
+                                if old_price and product_data['current_price'] < old_price:
+                                    print(f"[HOURLY_REFRESH] 📉 Price drop detected for {product.name[:30]}")
+                                    # Trigger alert check in background
+                                    try:
+                                        check_price_alerts()
+                                    except Exception as alert_error:
+                                        print(f"[HOURLY_REFRESH] Alert check error: {alert_error}")
+                            else:
+                                print(f"[HOURLY_REFRESH] ⚠️ No price data for {product.name[:30]}")
+                                error_count += 1
+                        else:
+                            print(f"[HOURLY_REFRESH] ❌ Error for {product.name[:30]}: {product_data['error']}")
+                            error_count += 1
+                            
+                    except Exception as e:
+                        print(f"[HOURLY_REFRESH] ❌ Exception for {product.name[:30]}: {str(e)}")
+                        error_count += 1
+                        
+                    # Add delay between requests to avoid rate limiting
+                    time.sleep(3)  # 3 second delay between each product
+                
+                # Commit all changes at once
+                try:
+                    db.session.commit()
+                    print(f"[HOURLY_REFRESH] ✅ Cycle completed - Success: {success_count}, Errors: {error_count}")
+                except Exception as commit_error:
+                    print(f"[HOURLY_REFRESH] ❌ Database commit error: {commit_error}")
+                    db.session.rollback()
+                    
+        except Exception as e:
+            print(f"[HOURLY_REFRESH] ❌ Critical error in refresh cycle: {str(e)}")
+            # Continue the loop even if there's an error
+            continue
 
+def start_hourly_refresh_service():
+    """Start the hourly refresh service in a background daemon thread"""
+    print("[HOURLY_REFRESH] Initializing hourly refresh service...")
+    
+    # Create and start the background thread
+    refresh_thread = threading.Thread(
+        target=continuous_hourly_refresh,
+        daemon=True,  # Dies when main process dies
+        name="HourlyRefreshThread"
+    )
+    
+    try:
+        refresh_thread.start()
+        print("[HOURLY_REFRESH] ✅ Hourly refresh service started successfully")
+        return True
+    except Exception as e:
+        print(f"[HOURLY_REFRESH] ❌ Failed to start hourly refresh service: {str(e)}")
+        return False
 # Create a scheduler for updating prices and checking alerts
 # Replace the scheduler section in main.py with this:
 scheduler = None
@@ -685,7 +800,22 @@ def refresh_product(current_user, product_id):
             'details': str(e)
         }), 500
 # Add these endpoints to main.py
-
+@app.route('/api/hourly-refresh/status', methods=['GET'])
+@token_required
+def hourly_refresh_status(current_user):
+    """Check if the hourly refresh service is running"""
+    active_threads = threading.active_count()
+    refresh_thread_active = any(
+        thread.name == "HourlyRefreshThread" 
+        for thread in threading.enumerate()
+    )
+    
+    return jsonify({
+        'service_running': refresh_thread_active,
+        'active_threads': active_threads,
+        'thread_names': [thread.name for thread in threading.enumerate()],
+        'status': 'running' if refresh_thread_active else 'stopped'
+    })
 @app.route('/api/products/<int:product_id>/alternatives', methods=['GET'])
 @token_required
 def get_product_alternatives(current_user, product_id):
@@ -941,6 +1071,7 @@ def start_scheduler():
 
 # Start the scheduler
 start_scheduler()
+start_hourly_refresh_service()
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
     print(f"[APP] Starting Flask app on port {port}")
