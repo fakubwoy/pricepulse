@@ -58,8 +58,23 @@ class AmazonScraper:
     
     def is_valid_amazon_url(self, url):
         """Validate if URL is an Amazon product URL"""
-        pattern = r'^https?://(www\.)?amazon\.(com|in|co\.uk|ca|de|fr|es|it|co\.jp)/.*/dp/[A-Z0-9]{10}'
-        return bool(re.match(pattern, url))
+        # More flexible pattern that accepts various Amazon URL formats
+        patterns = [
+            # Standard format: /dp/ASIN
+            r'^https?://(www\.)?amazon\.(com|in|co\.uk|ca|de|fr|es|it|co\.jp)/.*/dp/[A-Z0-9]{10}',
+            # Direct format: /dp/ASIN (without path)
+            r'^https?://(www\.)?amazon\.(com|in|co\.uk|ca|de|fr|es|it|co\.jp)/dp/[A-Z0-9]{10}',
+            # gp/product format
+            r'^https?://(www\.)?amazon\.(com|in|co\.uk|ca|de|fr|es|it|co\.jp)/gp/product/[A-Z0-9]{10}',
+            # exec/obidos format (older URLs)
+            r'^https?://(www\.)?amazon\.(com|in|co\.uk|ca|de|fr|es|it|co\.jp)/exec/obidos/ASIN/[A-Z0-9]{10}'
+        ]
+        
+        for pattern in patterns:
+            if re.match(pattern, url):
+                return True
+        
+        return False
     
     def extract_asin(self, url):
         """Extract ASIN from Amazon URL"""
