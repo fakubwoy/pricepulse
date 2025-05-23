@@ -142,7 +142,7 @@ def initialize_scheduler():
         scheduler.add_job(
             func=lambda: run_with_context(scheduled_update), 
             trigger="interval", 
-            minutes=5,  # Increased from 2 minutes to reduce load
+            minutes=30,  
             id='update_products',
             replace_existing=True,
             max_instances=1
