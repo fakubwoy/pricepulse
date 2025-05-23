@@ -100,11 +100,20 @@ class LLMService:
             'waterproof', 'wireless', 'bluetooth', 'wifi', 'usb',
             'fast charging', 'quick charge', 'amoled', 'oled'
         ]
-        return [
-            f"{kw}: {re.search(rf'\d+{kw}', text, re.I).group(0)}"
-            if re.search(rf'\d+{kw}', text, re.I) else kw
-            for kw in feature_keywords if kw in text
-        ][:3]
+        
+        features = []
+        for kw in feature_keywords:
+            if kw in text:
+                # Create regex pattern first to avoid f-string nesting
+                pattern = rf'\d+{kw}'
+                match = re.search(pattern, text, re.IGNORECASE)
+                
+                if match:
+                    features.append(f"{kw}: {match.group(0)}")
+                else:
+                    features.append(kw)
+        
+        return features[:3]  # Return top 3 features
 
     def _call_hf_api(self, prompt: str) -> Optional[Dict]:
         try:
