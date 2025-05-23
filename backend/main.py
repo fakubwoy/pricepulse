@@ -11,6 +11,7 @@ import logging
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
 import threading
+import atexit
 load_dotenv()
 
 # Import our modules
@@ -78,6 +79,7 @@ from database import db
 
 # Create a scheduler for updating prices and checking alerts
 # Replace the scheduler section in main.py with this:
+scheduler = None
 
 # Create a scheduler for updating prices and checking alerts
 def run_with_context(func):
@@ -92,30 +94,34 @@ def run_with_context(func):
         import traceback
         traceback.print_exc()
 
-# Initialize scheduler regardless of environment for testing
-scheduler = BackgroundScheduler()
 
-# Add logging to see if scheduler is working
 def scheduled_update():
     print("[SCHEDULER] Scheduled update started...")
-    update_all_products()
-    print("[SCHEDULER] Scheduled update completed.")
+    try:
+        update_all_products()
+        print("[SCHEDULER] Scheduled update completed.")
+    except Exception as e:
+        print(f"[SCHEDULER] Update error: {e}")
 
 def scheduled_alerts():
     print("[SCHEDULER] Scheduled alert check started...")
-    check_price_alerts()
-    print("[SCHEDULER] Scheduled alert check completed.")
+    try:
+        check_price_alerts()
+        print("[SCHEDULER] Scheduled alert check completed.")
+    except Exception as e:
+        print(f"[SCHEDULER] Alert check error: {e}")
 
 def scheduled_daily_prices():
     print("[SCHEDULER] Scheduled daily price storage started...")
-    store_daily_prices()
-    print("[SCHEDULER] Scheduled daily price storage completed.")
+    try:
+        store_daily_prices()
+        print("[SCHEDULER] Scheduled daily price storage completed.")
+    except Exception as e:
+        print(f"[SCHEDULER] Daily prices error: {e}")
 
-
-
-# Initialize scheduler with proper configuration
 def initialize_scheduler():
     """Initialize and start the background scheduler"""
+    global scheduler
     try:
         print("[SCHEDULER] Initializing scheduler...")
         
@@ -127,22 +133,21 @@ def initialize_scheduler():
         # Create scheduler with proper timezone
         scheduler = BackgroundScheduler(
             executors=executors,
-            timezone='Asia/Kolkata'  # IST timezone
+            timezone='Asia/Kolkata'
         )
         
         print("[SCHEDULER] Adding jobs...")
         
-        # Add jobs with proper error handling
+        # Add jobs with lambda wrapper for Flask context
         scheduler.add_job(
             func=lambda: run_with_context(scheduled_update), 
             trigger="interval", 
-            minutes=2,
+            minutes=5,  # Increased from 2 minutes to reduce load
             id='update_products',
             replace_existing=True,
             max_instances=1
         )
-        print("[SCHEDULER] Added update_products job")
-
+        
         scheduler.add_job(
             func=lambda: run_with_context(scheduled_alerts), 
             trigger="interval", 
@@ -151,7 +156,6 @@ def initialize_scheduler():
             replace_existing=True,
             max_instances=1
         )
-        print("[SCHEDULER] Added check_alerts job")
 
         scheduler.add_job(
             func=lambda: run_with_context(scheduled_daily_prices), 
@@ -162,28 +166,22 @@ def initialize_scheduler():
             replace_existing=True,
             max_instances=1
         )
-        print("[SCHEDULER] Added daily_prices job")
         
         # Start the scheduler
-        print("[SCHEDULER] Starting scheduler...")
         scheduler.start()
-        
         print("[SCHEDULER] ✅ Scheduler started successfully!")
         print(f"[SCHEDULER] Active jobs: {[job.id for job in scheduler.get_jobs()]}")
         
-        # Verify scheduler is running
-        if scheduler.running:
-            print("[SCHEDULER] ✅ Scheduler is confirmed running")
-        else:
-            print("[SCHEDULER] ❌ Scheduler failed to start")
-            
-        return scheduler
+        # Register cleanup function
+        atexit.register(lambda: scheduler.shutdown() if scheduler else None)
+        
+        return True
         
     except Exception as e:
         print(f"[SCHEDULER] ❌ Failed to initialize scheduler: {str(e)}")
         import traceback
         traceback.print_exc()
-        return None
+        return False
 
 # Initialize the scheduler after Flask app is ready
 def setup_scheduler_after_init():
@@ -227,30 +225,41 @@ def token_required(f):
     def decorated(*args, **kwargs):
         token = None
         
+        # Check Authorization header
         if 'Authorization' in request.headers:
             auth_header = request.headers['Authorization']
             try:
-                token = auth_header.split(" ")[1]  # Bearer <token>
+                if auth_header.startswith('Bearer '):
+                    token = auth_header.split(" ")[1]
+                else:
+                    token = auth_header  # Handle cases without "Bearer " prefix
             except IndexError:
                 return jsonify({'error': 'Invalid authorization header format'}), 401
+        
+        # Also check for token in request body (for some frontend implementations)
+        elif request.is_json and request.json and 'token' in request.json:
+            token = request.json['token']
             
         if not token:
+            print(f"[AUTH] No token found in request to {request.endpoint}")
             return jsonify({'error': 'Token is missing'}), 401
             
         try:
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
             current_user = User.query.get(data['user_id'])
             
-            # Check if user exists
             if not current_user:
+                print(f"[AUTH] User not found for token: {data.get('user_id')}")
                 return jsonify({'error': 'User not found'}), 401
                 
         except jwt.ExpiredSignatureError:
+            print("[AUTH] Token has expired")
             return jsonify({'error': 'Token has expired'}), 401
-        except jwt.InvalidTokenError:
+        except jwt.InvalidTokenError as e:
+            print(f"[AUTH] Invalid token: {str(e)}")
             return jsonify({'error': 'Token is invalid'}), 401
         except Exception as e:
-            print(f"Token validation error: {str(e)}")
+            print(f"[AUTH] Token validation error: {str(e)}")
             return jsonify({'error': 'Token validation failed'}), 401
             
         return f(current_user, *args, **kwargs)
@@ -268,27 +277,36 @@ def health_check():
 @token_required
 def scheduler_status(current_user):
     """Check scheduler status"""
-    if hasattr(app, 'scheduler') and app.scheduler:
+    global scheduler
+    
+    if scheduler and scheduler.running:
         jobs = []
-        for job in app.scheduler.get_jobs():
-            jobs.append({
-                'id': job.id,
-                'name': job.name,
-                'next_run': job.next_run_time.isoformat() if job.next_run_time else None,
-                'trigger': str(job.trigger)
-            })
+        try:
+            for job in scheduler.get_jobs():
+                jobs.append({
+                    'id': job.id,
+                    'name': job.name or job.id,
+                    'next_run': job.next_run_time.isoformat() if job.next_run_time else None,
+                    'trigger': str(job.trigger)
+                })
+        except Exception as e:
+            print(f"[SCHEDULER] Error getting job info: {e}")
         
         return jsonify({
-            'status': 'running' if app.scheduler.running else 'stopped',
+            'status': 'running',
             'jobs': jobs,
-            'total_jobs': len(jobs)
+            'total_jobs': len(jobs),
+            'scheduler_running': scheduler.running
         })
     else:
         return jsonify({
-            'status': 'not_initialized',
+            'status': 'not_running',
             'jobs': [],
-            'total_jobs': 0
-        }), 500
+            'total_jobs': 0,
+            'scheduler_running': False,
+            'message': 'Scheduler is not running or not initialized'
+        })
+        
 @app.route('/api/auth/register', methods=['POST'])
 def register():
     """Register a new user"""
@@ -902,7 +920,29 @@ def test_email_alert(current_user):
         return jsonify({'success': True, 'message': 'Test email sent successfully'})
     else:
         return jsonify({'error': 'Failed to send test email'}), 500
+def start_scheduler():
+    """Start scheduler in a separate thread to avoid blocking"""
+    def init_in_thread():
+        # Give Flask app time to fully initialize
+        import time
+        time.sleep(2)
+        
+        with app.app_context():
+            success = initialize_scheduler()
+            if success:
+                app.scheduler = scheduler
+                print("[SCHEDULER] ✅ Scheduler attached to Flask app")
+            else:
+                print("[SCHEDULER] ❌ Scheduler failed to start")
+    
+    # Start scheduler in background thread
+    scheduler_thread = threading.Thread(target=init_in_thread, daemon=True)
+    scheduler_thread.start()
 
+# Start the scheduler
+start_scheduler()
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
-    app.run(debug=False, host='0.0.0.0', port=port)
+    print(f"[APP] Starting Flask app on port {port}")
+    print(f"[APP] Environment: {'Production' if not os.getenv('FLASK_DEBUG') else 'Development'}")
+    app.run(debug=False, host='0.0.0.0', port=port, threaded=True)
