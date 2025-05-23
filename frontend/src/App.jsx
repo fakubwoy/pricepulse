@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { AlertTriangle, Trash2, RefreshCw, Plus, ShoppingCart, Bell, ChevronRight, ExternalLink, TrendingDown, Zap, User, LogIn, LogOut, UserPlus } from 'lucide-react';
+import { AlertTriangle, Trash2, RefreshCw, Plus, ShoppingCart, Bell, ChevronRight, ExternalLink, TrendingDown, Zap, User, LogIn, LogOut, UserPlus, X } from 'lucide-react';
 import './App.css';
 
 const API_BASE_URL = process.env.NODE_ENV === 'production' 
@@ -46,6 +46,16 @@ function App() {
     }
   }, [auth.isAuthenticated]);
 
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => {
+        setError(null);
+      }, 3000); // Alert disappears after 5 seconds
+
+      // Cleanup timer if component unmounts or error changes
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
   // Fetch price history when a product is selected
   useEffect(() => {
     if (selectedProduct && auth.isAuthenticated) {
@@ -383,12 +393,18 @@ function App() {
             
             <div className="p-6">
               {error && (
-                <div className="alert alert-error mb-6">
+                <div className="alert alert-error mb-6 relative">
                   <AlertTriangle className="mr-3 flex-shrink-0" />
                   <span>{error}</span>
+                  <button
+                    onClick={() => setError(null)}
+                    className="absolute top-2 right-2 text-red-300 hover:text-white transition-colors"
+                    title="Dismiss"
+                  >
+                    <X size={18} />
+                  </button>
                 </div>
               )}
-              
               <form onSubmit={handleAuth}>
                 <h2 className="text-xl font-semibold mb-6 text-center">
                   {authForm.isLogin ? 'Sign In' : 'Create Account'}
@@ -496,13 +512,19 @@ function App() {
 
       <main className="container mx-auto p-4 md:p-6">
         {/* Error Alert */}
-        {error && (
-          <div className="alert alert-error mb-6">
-            <AlertTriangle className="mr-3 flex-shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
+         {error && (
+            <div className="alert alert-error mb-6 relative">
+              <AlertTriangle className="mr-3 flex-shrink-0" />
+              <span>{error}</span>
+              <button
+                onClick={() => setError(null)}
+                className="absolute top-2 right-2 text-red-300 hover:text-white transition-colors"
+                title="Dismiss"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          )}
         {/* Add Product Card */}
         <div className="card mb-6">
           <div className="card-header">

@@ -870,7 +870,10 @@ header > * {
     background-position: 468px 0;
   }
 }
-
+@keyframes shrink {
+  from { width: 100%; }
+  to { width: 0%; }
+}
 .loading-skeleton {
   background: linear-gradient(to right, #f6f7f8 8%, #edeef1 18%, #f6f7f8 33%);
   background-size: 800px 104px;

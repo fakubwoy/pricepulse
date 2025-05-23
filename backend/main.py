@@ -388,11 +388,11 @@ def refresh_product(current_user, product_id):
         time_diff = current_time - last_updated
         
         # Only block if updated within last 2 minutes (reduced from 5 minutes)
-        if time_diff.total_seconds() < 120:  
+        if time_diff.total_seconds() < 60:  
             return jsonify({
                 'error': 'Product was recently updated. Please wait a moment before refreshing again.',
                 'last_updated': last_updated.isoformat(),
-                'retry_after_seconds': int(120 - time_diff.total_seconds())
+                'retry_after_seconds': int(60 - time_diff.total_seconds())
             }), 429
     
     scraper = AmazonScraper()
