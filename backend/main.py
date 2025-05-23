@@ -451,14 +451,20 @@ def refresh_product(current_user, product_id):
             product.current_price = product_data['current_price']
             updated = True
             
-            # Add to price history only if price is valid
-            if product_data['current_price'] > 0:
-                price_history = PriceHistory(product_id=product.id, price=product_data['current_price'])
-                db.session.add(price_history)
-                
-                # Check alerts immediately if price decreased
-                if old_price and product_data['current_price'] < old_price:
-                    check_price_alerts()
+            # Check alerts immediately if price decreased
+            if old_price and product_data['current_price'] < old_price:
+                check_price_alerts()
+
+        # Add price history entry for every refresh if price is valid
+        current_price = product_data.get('current_price')
+        if current_price is not None and current_price > 0:
+            price_history = PriceHistory(
+                product_id=product.id,
+                price=current_price
+            )
+            db.session.add(price_history)
+            print(f"Added price entry for refresh: {current_price}")
+
         
         # Update additional attributes if available
         if product_data.get('original_price'):
