@@ -702,20 +702,7 @@ def update_all_products():
             time_since_update = (datetime.utcnow() - product.last_updated).total_seconds()
             if time_since_update >= 14400:  # 4 hours
                 needs_update = True
-            else:
-                # Check if we need to store today's price (daily price storage)
-                last_price_history = PriceHistory.query.filter_by(product_id=product.id).order_by(PriceHistory.timestamp.desc()).first()
                 
-                if last_price_history:
-                    # Check if the last price entry is from a different day
-                    last_entry_date = last_price_history.timestamp.date()
-                    today = datetime.utcnow().date()
-                    
-                    if last_entry_date < today:
-                        # Store today's price even if it hasn't changed
-                        needs_update = True
-                        print(f"Storing daily price for {product.name} (last entry: {last_entry_date})")
-        
         if not needs_update:
             continue
         
@@ -736,30 +723,25 @@ def update_all_products():
                 product.image = data['image']
             product.last_updated = datetime.utcnow()
             
-            # Always store price entry for daily tracking
             price_to_store = data.get('current_price', product.current_price)
-            
+
             if price_to_store and price_to_store > 0:
-                # Check if we already have a price entry for today
-                today = datetime.utcnow().date()
-                today_price_entry = PriceHistory.query.filter_by(product_id=product.id).filter(
-                    db.func.date(PriceHistory.timestamp) == today
-                ).first()
+                # Add new price history entry for every refresh
+                price_history = PriceHistory(product_id=product.id, price=price_to_store)
+                db.session.add(price_history)
+                print(f"Added price entry: {price_to_store} for {product.name}")
                 
-                if not today_price_entry:
-                    # Add new price history entry for today
-                    price_history = PriceHistory(product_id=product.id, price=price_to_store)
-                    db.session.add(price_history)
-                    print(f"Added daily price entry: {price_to_store}")
-                
-                # Update current price if it has changed
-                if data.get('current_price') and data['current_price'] != product.current_price:
+                # Update current price (even if it's the same)
+                if data.get('current_price'):
                     old_price = product.current_price
                     product.current_price = data['current_price']
-                    print(f"Price updated: {old_price} -> {data['current_price']}")
                     
-                    # Check price alerts
-                    check_price_alerts(product)
+                    if old_price != data['current_price']:
+                        print(f"Price changed: {old_price} -> {data['current_price']}")
+                        # Check price alerts only when price actually changes
+                        check_price_alerts(product)
+                    else:
+                        print(f"Price unchanged: {data['current_price']}")
             
             # Update other attributes
             for attr in ['original_price', 'currency', 'description', 'rating', 'in_stock']:
