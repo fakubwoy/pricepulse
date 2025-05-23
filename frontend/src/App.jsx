@@ -19,6 +19,7 @@ function App() {
   const [alternatives, setAlternatives] = useState([]);
   const [loadingAlternatives, setLoadingAlternatives] = useState(false);
   const [showComparison, setShowComparison] = useState(false);
+  const [showNoAlternativesAlert, setShowNoAlternativesAlert] = useState(false);
   const [comparisonData, setComparisonData] = useState(null);
   const [newAlert, setNewAlert] = useState({ target_price: '' });
   const [auth, setAuth] = useState({
@@ -198,6 +199,16 @@ const fetchAlternatives = async (productId) => {
     
     const data = await response.json();
     setAlternatives(data.alternatives || []);
+    
+    // Show alert only when no alternatives found and button was clicked
+    if (!data.alternatives || data.alternatives.length === 0) {
+      setShowNoAlternativesAlert(true);
+      // Auto-hide after 3.5 seconds
+      setTimeout(() => {
+        setShowNoAlternativesAlert(false);
+      }, 3500);
+    }
+    
     return data;
   } catch (err) {
     setError(err.message);
@@ -951,7 +962,7 @@ const testLLMService = async () => {
         ))}
       </div>
     </div>
-  ): (
+  ): showNoAlternativesAlert &&(
   <div className="alert alert-error mb-6">
     <AlertTriangle className="mr-3 flex-shrink-0" />
     <span>No alternatives found for this product.</span>
