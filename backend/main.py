@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import our modules
+from llm_service import LLMService, MultiPlatformSearcher
 from database import init_db
 from models import User, Product, PriceHistory, PriceAlert
 from scraper import AmazonScraper, update_all_products,store_daily_prices
@@ -512,7 +513,108 @@ def refresh_product(current_user, product_id):
             'error': 'An unexpected error occurred while refreshing the product. Please try again later.',
             'details': str(e)
         }), 500
+# Add these endpoints to main.py
+
+@app.route('/api/products/<int:product_id>/alternatives', methods=['GET'])
+@token_required
+def get_product_alternatives(current_user, product_id):
+    """Get alternative products from other platforms using LLM"""
+    # Check if product exists and belongs to user
+    product = Product.query.filter_by(id=product_id, user_id=current_user.id).first()
+    if not product:
+        return jsonify({'error': 'Product not found'}), 404
+    
+    try:
+        # Initialize LLM service
+        llm_service = LLMService()
         
+        # Extract metadata from product
+        metadata = llm_service.extract_product_metadata(
+            product.name, 
+            product.description or ""
+        )
+        
+        # Search across platforms
+        searcher = MultiPlatformSearcher()
+        alternatives = searcher.search_across_platforms(metadata, product.name)
+        
+        return jsonify({
+            'metadata': metadata,
+            'alternatives': alternatives,
+            'total_found': len(alternatives)
+        })
+        
+    except Exception as e:
+        print(f"Error finding alternatives: {e}")
+        return jsonify({'error': 'Failed to find alternatives'}), 500
+
+@app.route('/api/products/<int:product_id>/compare', methods=['GET'])
+@token_required
+def compare_product_prices(current_user, product_id):
+    """Compare product prices across platforms"""
+    # Check if product exists and belongs to user
+    product = Product.query.filter_by(id=product_id, user_id=current_user.id).first()
+    if not product:
+        return jsonify({'error': 'Product not found'}), 404
+    
+    try:
+        # Get alternatives
+        llm_service = LLMService()
+        metadata = llm_service.extract_product_metadata(product.name, product.description or "")
+        
+        searcher = MultiPlatformSearcher()
+        alternatives = searcher.search_across_platforms(metadata, product.name)
+        
+        # Create comparison data
+        comparison = {
+            'primary_product': {
+                'platform': 'Amazon',
+                'name': product.name,
+                'price': product.current_price,
+                'currency': product.currency,
+                'url': product.url,
+                'image': product.image
+            },
+            'alternatives': alternatives,
+            'cheapest': None,
+            'savings': 0
+        }
+        
+        # Find cheapest alternative
+        if alternatives:
+            cheapest = min(alternatives, key=lambda x: x.get('price', float('inf')))
+            if cheapest['price'] < product.current_price:
+                comparison['cheapest'] = cheapest
+                comparison['savings'] = product.current_price - cheapest['price']
+        
+        return jsonify(comparison)
+        
+    except Exception as e:
+        print(f"Error comparing prices: {e}")
+        return jsonify({'error': 'Failed to compare prices'}), 500
+
+@app.route('/api/llm/test', methods=['POST'])
+@token_required
+def test_llm_service(current_user):
+    """Test the LLM service with a sample product"""
+    try:
+        data = request.json
+        product_name = data.get('product_name', 'Samsung Galaxy M14')
+        
+        llm_service = LLMService()
+        metadata = llm_service.extract_product_metadata(product_name)
+        
+        return jsonify({
+            'status': 'success',
+            'product_name': product_name,
+            'extracted_metadata': metadata
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
 @app.route('/api/scraper/status', methods=['GET'])
 @token_required
 def scraper_status(current_user):

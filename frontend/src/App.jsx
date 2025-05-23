@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { AlertTriangle, Trash2, RefreshCw, Plus, ShoppingCart, Bell, ChevronRight, ExternalLink, TrendingDown, Zap, User, LogIn, LogOut, UserPlus, X } from 'lucide-react';
+import { AlertTriangle, Trash2, RefreshCw, Plus, ShoppingCart, Bell, ChevronRight, ExternalLink, TrendingDown, Zap, User, LogIn, LogOut, UserPlus, X, Search } from 'lucide-react';
 import './App.css';
 
 const API_BASE_URL = process.env.NODE_ENV === 'production' 
@@ -16,6 +16,10 @@ function App() {
   const [priceHistory, setPriceHistory] = useState([]);
   const [historyDays, setHistoryDays] = useState(30);
   const [alerts, setAlerts] = useState([]);
+  const [alternatives, setAlternatives] = useState([]);
+  const [loadingAlternatives, setLoadingAlternatives] = useState(false);
+  const [showComparison, setShowComparison] = useState(false);
+  const [comparisonData, setComparisonData] = useState(null);
   const [newAlert, setNewAlert] = useState({ target_price: '' });
   const [auth, setAuth] = useState({
     isAuthenticated: false,
@@ -177,7 +181,80 @@ function App() {
       setLoading(false);
     }
   };
+  // Add these functions to App.jsx
 
+const fetchAlternatives = async (productId) => {
+  try {
+    setLoadingAlternatives(true);
+    const response = await fetch(`${API_BASE_URL}/products/${productId}/alternatives`, {
+      headers: {
+        'Authorization': `Bearer ${auth.token}`
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch alternatives');
+    }
+    
+    const data = await response.json();
+    setAlternatives(data.alternatives || []);
+    return data;
+  } catch (err) {
+    setError(err.message);
+    return null;
+  } finally {
+    setLoadingAlternatives(false);
+  }
+};
+
+const fetchPriceComparison = async (productId) => {
+  try {
+    setLoadingAlternatives(true);
+    const response = await fetch(`${API_BASE_URL}/products/${productId}/compare`, {
+      headers: {
+        'Authorization': `Bearer ${auth.token}`
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch price comparison');
+    }
+    
+    const data = await response.json();
+    setComparisonData(data);
+    setShowComparison(true);
+    return data;
+  } catch (err) {
+    setError(err.message);
+    return null;
+  } finally {
+    setLoadingAlternatives(false);
+  }
+};
+
+const testLLMService = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/llm/test`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${auth.token}`
+      },
+      body: JSON.stringify({
+        product_name: selectedProduct?.name || 'Samsung Galaxy M14'
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error('LLM test failed');
+    }
+    
+    const data = await response.json();
+    alert(`LLM Test Success!\nBrand: ${data.extracted_metadata.brand}\nCategory: ${data.extracted_metadata.category}`);
+  } catch (err) {
+    setError(err.message);
+  }
+};
   const fetchPriceHistory = async (productId) => {
     try {
       const response = await fetch(`${API_BASE_URL}/products/${productId}/history?days=${historyDays}`, {
@@ -784,7 +861,225 @@ function App() {
                       </div>
                     )}
                   </div>
-                  
+                  <div className="mt-8">
+  <h3 className="text-lg font-semibold mb-4 flex items-center">
+    <Search className="mr-2 text-indigo-500" size={20} />
+    Find Better Prices
+  </h3>
+  
+  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-100 mb-6">
+    <div className="flex flex-col md:flex-row gap-3 items-center justify-between">
+      <div>
+        <h4 className="font-medium text-indigo-800 mb-1">AI-Powered Price Search</h4>
+        <p className="text-sm text-indigo-600">Find this product on other platforms like Flipkart, Meesho and more</p>
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={() => fetchAlternatives(selectedProduct.id)}
+          disabled={loadingAlternatives}
+          className="btn btn-sm btn-primary"
+        >
+          {loadingAlternatives ? (
+            <span className="flex items-center">
+              <RefreshCw className="animate-spin mr-2" size={16} />
+              Searching...
+            </span>
+          ) : (
+            <span className="flex items-center">
+              <Search className="mr-2" size={16} />
+              Find Alternatives
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => fetchPriceComparison(selectedProduct.id)}
+          disabled={loadingAlternatives}
+          className="btn btn-sm btn-ghost text-indigo-600 hover:bg-indigo-100"
+        >
+          <TrendingDown className="mr-2" size={16} />
+          Compare Prices
+        </button>
+      </div>
+    </div>
+  </div>
+  
+  {/* Alternatives List */}
+  {alternatives.length > 0 && (
+    <div className="border rounded-lg overflow-hidden mb-6">
+      <div className="bg-gray-50 px-4 py-3 border-b">
+        <h4 className="font-medium text-gray-800">Found on Other Platforms</h4>
+      </div>
+      <div className="divide-y divide-gray-100">
+        {alternatives.map((alt, index) => (
+          <div key={index} className="p-4 hover:bg-gray-50">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <div className="flex items-center mb-2">
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mr-3">
+                    {alt.platform.charAt(0).toUpperCase() + alt.platform.slice(1)}
+                  </span>
+                  <h5 className="font-medium text-gray-900 truncate">{alt.title}</h5>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span className="text-lg font-bold text-green-600">
+                    {formatPrice(alt.price, alt.currency)}
+                  </span>
+                  {alt.price < selectedProduct.current_price && (
+                    <span className="text-sm font-medium text-green-600 bg-green-50 px-2 py-1 rounded">
+                      Save {formatPrice(selectedProduct.current_price - alt.price)}
+                    </span>
+                  )}
+                  <span className={`text-xs px-2 py-1 rounded-full ${
+                    alt.availability === 'In Stock' 
+                      ? 'bg-green-100 text-green-800' 
+                      : 'bg-red-100 text-red-800'
+                  }`}>
+                    {alt.availability}
+                  </span>
+                </div>
+              </div>
+              <a 
+                href={alt.url} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="btn btn-sm btn-ghost text-indigo-600 hover:bg-indigo-100 ml-4"
+              >
+                <ExternalLink size={16} />
+              </a>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )}
+  
+  {/* Price Comparison Modal */}
+  {showComparison && comparisonData && (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-xl font-semibold">Price Comparison</h3>
+            <button
+              onClick={() => setShowComparison(false)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <X size={24} />
+            </button>
+          </div>
+          
+          {/* Comparison Table */}
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse border border-gray-300">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="border border-gray-300 px-4 py-3 text-left">Platform</th>
+                  <th className="border border-gray-300 px-4 py-3 text-left">Product</th>
+                  <th className="border border-gray-300 px-4 py-3 text-left">Price</th>
+                  <th className="border border-gray-300 px-4 py-3 text-left">Availability</th>
+                  <th className="border border-gray-300 px-4 py-3 text-left">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {/* Current Product */}
+                <tr className="bg-blue-50">
+                  <td className="border border-gray-300 px-4 py-3 font-medium">
+                    Amazon (Current)
+                  </td>
+                  <td className="border border-gray-300 px-4 py-3">
+                    {comparisonData.primary_product.name}
+                  </td>
+                  <td className="border border-gray-300 px-4 py-3 font-bold">
+                    {formatPrice(comparisonData.primary_product.price, comparisonData.primary_product.currency)}
+                  </td>
+                  <td className="border border-gray-300 px-4 py-3">
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      In Stock
+                    </span>
+                  </td>
+                  <td className="border border-gray-300 px-4 py-3">
+                    <a 
+                      href={comparisonData.primary_product.url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-indigo-600 hover:text-indigo-800 text-sm"
+                    >
+                      View <ExternalLink className="inline ml-1" size={12} />
+                    </a>
+                  </td>
+                </tr>
+                
+                {/* Alternative Products */}
+                {comparisonData.alternatives.map((alt, index) => (
+                  <tr key={index} className={alt.price < comparisonData.primary_product.price ? 'bg-green-50' : ''}>
+                    <td className="border border-gray-300 px-4 py-3">
+                      {alt.platform.charAt(0).toUpperCase() + alt.platform.slice(1)}
+                    </td>
+                    <td className="border border-gray-300 px-4 py-3">{alt.title}</td>
+                    <td className="border border-gray-300 px-4 py-3">
+                      <span className={alt.price < comparisonData.primary_product.price ? 'font-bold text-green-600' : ''}>
+                        {formatPrice(alt.price, alt.currency)}
+                      </span>
+                      {alt.price < comparisonData.primary_product.price && (
+                        <div className="text-xs text-green-600 mt-1">
+                          Save {formatPrice(comparisonData.primary_product.price - alt.price)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="border border-gray-300 px-4 py-3">
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                        alt.availability === 'In Stock' 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-red-100 text-red-800'
+                      }`}>
+                        {alt.availability}
+                      </span>
+                    </td>
+                    <td className="border border-gray-300 px-4 py-3">
+                      <a 
+                        href={alt.url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-indigo-600 hover:text-indigo-800 text-sm"
+                      >
+                        View <ExternalLink className="inline ml-1" size={12} />
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          
+          {/* Best Deal Summary */}
+          {comparisonData.cheapest && (
+            <div className="mt-6 p-4 bg-green-50 rounded-lg border border-green-200">
+              <h4 className="font-medium text-green-800 mb-2 flex items-center">
+                <TrendingDown className="mr-2" size={16} />
+                Best Deal Found!
+              </h4>
+              <p className="text-green-700">
+                Save <strong>{formatPrice(comparisonData.savings)}</strong> by buying from{' '}
+                <strong>{comparisonData.cheapest.platform.charAt(0).toUpperCase() + comparisonData.cheapest.platform.slice(1)}</strong>
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )}
+  
+  {/* Test LLM Button (for development) */}
+  <div className="mt-4">
+    <button
+      onClick={testLLMService}
+      className="btn btn-sm btn-ghost text-gray-600 hover:bg-gray-100"
+    >
+      <Zap className="mr-2" size={16} />
+      Test AI Service
+    </button>
+  </div>
+</div>
                   {/* Price Alerts Section */}
                   <div>
                     <h3 className="text-lg font-semibold mb-4 flex items-center">
