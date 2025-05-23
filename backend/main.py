@@ -7,6 +7,10 @@ from datetime import datetime, timedelta, timezone
 import jwt
 from functools import wraps
 from dotenv import load_dotenv
+import logging
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.executors.pool import ThreadPoolExecutor
+import threading
 load_dotenv()
 
 # Import our modules
@@ -38,7 +42,9 @@ IST = timezone(timedelta(hours=5, minutes=30))
 # Initialize Flask-Login
 login_manager = LoginManager()
 login_manager.init_app(app)
-
+logging.basicConfig(level=logging.INFO)
+scheduler_logger = logging.getLogger('apscheduler')
+scheduler_logger.setLevel(logging.INFO)
 def get_ist_time():
     """Get current time in IST timezone"""
     return datetime.now(IST)
@@ -78,64 +84,139 @@ def run_with_context(func):
     """Wrapper to run scheduled jobs within Flask app context"""
     try:
         with app.app_context():
-            print(f"Running scheduled job: {func.__name__}")
+            print(f"[SCHEDULER] Running scheduled job: {func.__name__}")
             func()
-            print(f"Completed scheduled job: {func.__name__}")
+            print(f"[SCHEDULER] Completed scheduled job: {func.__name__}")
     except Exception as e:
-        print(f"Error in scheduled job {func.__name__}: {str(e)}")
+        print(f"[SCHEDULER] Error in scheduled job {func.__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
 # Initialize scheduler regardless of environment for testing
 scheduler = BackgroundScheduler()
 
 # Add logging to see if scheduler is working
 def scheduled_update():
-    print("Scheduled update started...")
+    print("[SCHEDULER] Scheduled update started...")
     update_all_products()
-    print("Scheduled update completed.")
+    print("[SCHEDULER] Scheduled update completed.")
 
 def scheduled_alerts():
-    print("Scheduled alert check started...")
+    print("[SCHEDULER] Scheduled alert check started...")
     check_price_alerts()
-    print("Scheduled alert check completed.")
+    print("[SCHEDULER] Scheduled alert check completed.")
 
 def scheduled_daily_prices():
-    print("Scheduled daily price storage started...")
+    print("[SCHEDULER] Scheduled daily price storage started...")
     store_daily_prices()
-    print("Scheduled daily price storage completed.")
+    print("[SCHEDULER] Scheduled daily price storage completed.")
 
-# Add jobs with logging
-scheduler.add_job(
-    func=lambda: run_with_context(scheduled_update), 
-    trigger="interval", 
-    minutes=2,
-    id='update_products'
-)
 
-scheduler.add_job(
-    func=lambda: run_with_context(scheduled_alerts), 
-    trigger="interval", 
-    minutes=15,
-    id='check_alerts'
-)
 
-scheduler.add_job(
-    func=lambda: run_with_context(scheduled_daily_prices), 
-    trigger="cron", 
-    hour=0, 
-    minute=30,
-    id='daily_prices'
-)
+# Initialize scheduler with proper configuration
+def initialize_scheduler():
+    """Initialize and start the background scheduler"""
+    try:
+        print("[SCHEDULER] Initializing scheduler...")
+        
+        # Configure executors
+        executors = {
+            'default': ThreadPoolExecutor(max_workers=3)
+        }
+        
+        # Create scheduler with proper timezone
+        scheduler = BackgroundScheduler(
+            executors=executors,
+            timezone='Asia/Kolkata'  # IST timezone
+        )
+        
+        print("[SCHEDULER] Adding jobs...")
+        
+        # Add jobs with proper error handling
+        scheduler.add_job(
+            func=lambda: run_with_context(scheduled_update), 
+            trigger="interval", 
+            minutes=2,
+            id='update_products',
+            replace_existing=True,
+            max_instances=1
+        )
+        print("[SCHEDULER] Added update_products job")
 
-# Start the scheduler
-try:
-    scheduler.start()
-    print("Scheduler started successfully!")
-    print(f"Active jobs: {[job.id for job in scheduler.get_jobs()]}")
-except Exception as e:
-    print(f"Failed to start scheduler: {str(e)}")
+        scheduler.add_job(
+            func=lambda: run_with_context(scheduled_alerts), 
+            trigger="interval", 
+            minutes=15,
+            id='check_alerts',
+            replace_existing=True,
+            max_instances=1
+        )
+        print("[SCHEDULER] Added check_alerts job")
+
+        scheduler.add_job(
+            func=lambda: run_with_context(scheduled_daily_prices), 
+            trigger="cron", 
+            hour=0, 
+            minute=30,
+            id='daily_prices',
+            replace_existing=True,
+            max_instances=1
+        )
+        print("[SCHEDULER] Added daily_prices job")
+        
+        # Start the scheduler
+        print("[SCHEDULER] Starting scheduler...")
+        scheduler.start()
+        
+        print("[SCHEDULER] ✅ Scheduler started successfully!")
+        print(f"[SCHEDULER] Active jobs: {[job.id for job in scheduler.get_jobs()]}")
+        
+        # Verify scheduler is running
+        if scheduler.running:
+            print("[SCHEDULER] ✅ Scheduler is confirmed running")
+        else:
+            print("[SCHEDULER] ❌ Scheduler failed to start")
+            
+        return scheduler
+        
+    except Exception as e:
+        print(f"[SCHEDULER] ❌ Failed to initialize scheduler: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+# Initialize the scheduler after Flask app is ready
+def setup_scheduler_after_init():
+    """Setup scheduler after all imports are complete"""
+    try:
+        # Ensure all required modules are available
+        print("[SCHEDULER] Checking required modules...")
+        
+        # Test if functions exist
+        if 'update_all_products' not in globals():
+            print("[SCHEDULER] Warning: update_all_products not found")
+        if 'check_price_alerts' not in globals():
+            print("[SCHEDULER] Warning: check_price_alerts not found")
+        if 'store_daily_prices' not in globals():
+            print("[SCHEDULER] Warning: store_daily_prices not found")
+            
+        # Initialize scheduler
+        return initialize_scheduler()
+        
+    except Exception as e:
+        print(f"[SCHEDULER] Error in setup: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+# Call this after all imports are complete
+scheduler = setup_scheduler_after_init()
 
 # Keep scheduler reference to prevent garbage collection
-app.scheduler = scheduler
+if scheduler:
+    app.scheduler = scheduler
+else:
+    print("[SCHEDULER] ❌ Scheduler initialization failed - app will run without background tasks")
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -183,7 +264,31 @@ def health_check():
         'status': 'ok',
         'timestamp': get_ist_time().isoformat()
     })
-
+@app.route('/api/scheduler/status', methods=['GET'])
+@token_required
+def scheduler_status(current_user):
+    """Check scheduler status"""
+    if hasattr(app, 'scheduler') and app.scheduler:
+        jobs = []
+        for job in app.scheduler.get_jobs():
+            jobs.append({
+                'id': job.id,
+                'name': job.name,
+                'next_run': job.next_run_time.isoformat() if job.next_run_time else None,
+                'trigger': str(job.trigger)
+            })
+        
+        return jsonify({
+            'status': 'running' if app.scheduler.running else 'stopped',
+            'jobs': jobs,
+            'total_jobs': len(jobs)
+        })
+    else:
+        return jsonify({
+            'status': 'not_initialized',
+            'jobs': [],
+            'total_jobs': 0
+        }), 500
 @app.route('/api/auth/register', methods=['POST'])
 def register():
     """Register a new user"""
