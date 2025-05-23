@@ -79,7 +79,7 @@ if os.getenv('RENDER'):  # Only run scheduler on Render
             func()
     
     scheduler = BackgroundScheduler()
-    scheduler.add_job(func=lambda: run_with_context(update_all_products), trigger="interval", minutes=60)
+    scheduler.add_job(func=lambda: run_with_context(update_all_products), trigger="interval", minutes=2)
     scheduler.add_job(func=lambda: run_with_context(check_price_alerts), trigger="interval", minutes=15)
     scheduler.add_job(
         func=lambda: run_with_context(store_daily_prices), 
