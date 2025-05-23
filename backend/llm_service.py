@@ -157,22 +157,29 @@ class MultiPlatformSearcher:
         }
 
     def search_across_platforms(self, metadata: Dict, primary_product_name: str) -> List[Dict]:
-        results = []
+        all_results = []  # Fixed: Use different variable name
         search_queries = self._generate_search_queries(metadata, primary_product_name)
+        
+        print(f"Searching with queries: {search_queries}")  # Debug log
         
         for platform, config in self.platform_configs.items():
             try:
                 platform_results = []
-                for query in search_queries[:2]:
-                    results = self._search_platform(query, config)
-                    platform_results.extend(results)
+                for query in search_queries[:2]:  # Limit to first 2 queries
+                    search_results = self._search_platform(query, config)  # Fixed: Use different variable name
+                    platform_results.extend(search_results)
+                    print(f"Found {len(search_results)} results for {platform} with query: {query}")  # Debug log
                 
-                results.extend(self._deduplicate(platform_results)[:5])
+                # Deduplicate and add to all results
+                unique_platform_results = self._deduplicate(platform_results)[:5]
+                all_results.extend(unique_platform_results)
                 
             except Exception as e:
                 print(f"Error searching {platform}: {e}")
         
-        return self._sort_and_filter(results)
+        final_results = self._sort_and_filter(all_results)
+        print(f"Total final results: {len(final_results)}")  # Debug log
+        return final_results
 
     def _generate_search_queries(self, metadata: Dict, primary_name: str) -> List[str]:
         queries = [primary_name]
@@ -180,41 +187,81 @@ class MultiPlatformSearcher:
             queries.append(f"{metadata['brand']} {metadata['model']}")
         if metadata.get('search_terms'):
             queries.extend(metadata['search_terms'][:2])
-        return list(set(queries))
+        
+        # Remove duplicates while preserving order
+        unique_queries = []
+        for q in queries:
+            if q and q not in unique_queries:
+                unique_queries.append(q)
+        
+        print(f"Generated search queries: {unique_queries}")  # Debug log
+        return unique_queries
 
     def _search_platform(self, query: str, config: Dict) -> List[Dict]:
         try:
+            # Check if API credentials are available
+            if not self.google_api_key or not self.google_cse_id:
+                print(f"Missing Google API credentials - API Key: {bool(self.google_api_key)}, CSE ID: {bool(self.google_cse_id)}")
+                return []
+            
             encoded_query = quote_plus(f"{query} site:{config['site']}")
             url = f"https://www.googleapis.com/customsearch/v1?q={encoded_query}&key={self.google_api_key}&cx={self.google_cse_id}&num=5"
+            
+            print(f"Searching URL: {url}")  # Debug log
             
             response = requests.get(url, timeout=15)
             response.raise_for_status()
             
-            return self._parse_results(response.json(), config)
+            response_data = response.json()
+            results = self._parse_results(response_data, config)
+            
+            print(f"Parsed {len(results)} results from {config['site']}")  # Debug log
+            return results
+            
         except Exception as e:
             print(f"Search error for {config['site']}: {e}")
             return []
 
     def _parse_results(self, data: Dict, config: Dict) -> List[Dict]:
         results = []
-        for item in data.get('items', []):
-            price_str = f"{item.get('title', '')} {item.get('snippet', '')}"
-            price_match = re.search(config['price_pattern'], price_str)
-            
-            if price_match:
-                try:
-                    price = float(price_match.group(1).replace(',', ''))
-                except ValueError:
-                    continue
+        items = data.get('items', [])
+        
+        print(f"Processing {len(items)} items from search results")  # Debug log
+        
+        for item in items:
+            try:
+                title = item.get('title', '')
+                snippet = item.get('snippet', '')
+                price_str = f"{title} {snippet}"
                 
-                results.append({
-                    'platform': config['site'].split('.')[0].title(),
-                    'title': item.get('title'),
-                    'price': price,
-                    'currency': '₹',
-                    'url': item.get('link'),
-                    'availability': self._check_availability(item.get('snippet', ''))
-                })
+                # Try to find price in the text
+                price_match = re.search(config['price_pattern'], price_str)
+                
+                if price_match:
+                    try:
+                        price = float(price_match.group(1).replace(',', ''))
+                        
+                        result = {
+                            'platform': config['site'].split('.')[0].title(),
+                            'title': title,
+                            'price': price,
+                            'currency': '₹',
+                            'url': item.get('link'),
+                            'availability': self._check_availability(snippet)
+                        }
+                        
+                        results.append(result)
+                        print(f"Added result: {title[:50]}... - ₹{price}")  # Debug log
+                        
+                    except ValueError as ve:
+                        print(f"Price parsing error: {ve}")
+                        continue
+                else:
+                    print(f"No price found in: {price_str[:100]}...")  # Debug log
+                    
+            except Exception as e:
+                print(f"Error processing item: {e}")
+                continue
         
         return results
 
@@ -230,14 +277,27 @@ class MultiPlatformSearcher:
         seen = set()
         unique = []
         for item in items:
-            identifier = f"{item['url']}-{item['price']}"
+            # Create identifier based on URL and price
+            url = item.get('url', '')
+            price = item.get('price', 0)
+            identifier = f"{url}-{price}"
+            
             if identifier not in seen:
                 seen.add(identifier)
                 unique.append(item)
+                
+        print(f"Deduplicated: {len(items)} -> {len(unique)} items")  # Debug log
         return unique
 
     def _sort_and_filter(self, items: List[Dict]) -> List[Dict]:
-        return sorted(
-            [item for item in items if item['price']],
-            key=lambda x: x['price']
-        )[:10]  # Return top 10 cheapest
+        # Filter out items without valid prices
+        valid_items = [item for item in items if item.get('price') and item['price'] > 0]
+        
+        # Sort by price (lowest first)
+        sorted_items = sorted(valid_items, key=lambda x: x['price'])
+        
+        # Return top 10 cheapest
+        result = sorted_items[:10]
+        
+        print(f"Final filtering: {len(items)} -> {len(valid_items)} valid -> {len(result)} returned")  # Debug log
+        return result
