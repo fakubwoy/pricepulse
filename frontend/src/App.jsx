@@ -20,7 +20,6 @@ function App() {
   const [loadingAlternatives, setLoadingAlternatives] = useState(false);
   const [showComparison, setShowComparison] = useState(false);
   const [comparisonData, setComparisonData] = useState(null);
-  const [searchedAlternatives, setSearchedAlternatives] = useState(false);
   const [newAlert, setNewAlert] = useState({ target_price: '' });
   const [auth, setAuth] = useState({
     isAuthenticated: false,
@@ -187,7 +186,6 @@ function App() {
 const fetchAlternatives = async (productId) => {
   try {
     setLoadingAlternatives(true);
-    setSearchedAlternatives(true); // Add this line
     const response = await fetch(`${API_BASE_URL}/products/${productId}/alternatives`, {
       headers: {
         'Authorization': `Bearer ${auth.token}`
@@ -953,28 +951,12 @@ const testLLMService = async () => {
         ))}
       </div>
     </div>
-  ): searchedAlternatives && (
-  <div className="alert alert-error mb-6 relative">
+  ): (
+  <div className="alert alert-error mb-6">
     <AlertTriangle className="mr-3 flex-shrink-0" />
     <span>No alternatives found for this product.</span>
-    <button
-      onClick={() => setSearchedAlternatives(false)}
-      className="absolute top-2 right-2 text-red-300 hover:text-white transition-colors"
-      title="Dismiss"
-    >
-      <X size={18} />
-    </button>
   </div>
 )}
-
-{useEffect(() => {
-  if (searchedAlternatives && alternatives.length === 0) {
-    const timer = setTimeout(() => {
-      setSearchedAlternatives(false);
-    }, 3500);
-    return () => clearTimeout(timer);
-  }
-}, [searchedAlternatives, alternatives])}
   
   {/* Price Comparison Modal */}
   {showComparison && comparisonData && (
