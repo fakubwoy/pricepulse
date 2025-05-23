@@ -677,16 +677,19 @@ header::after {
   margin-bottom: 1rem;
   display: flex;
   align-items: center;
+  position: relative; /* necessary for absolute child */
 }
 
 .alert-error {
   background-color: #fee2e2;
   color: #b91c1c;
   border: 1px solid #fecaca;
+  position: relative; /* necessary for absolute child */
 }
 
 .absolute{
   right: 1rem; /* adjust as needed */
+  left: 90%;
   border: none;
   color: #b91c1c;
   background-color: #fee2e2;
