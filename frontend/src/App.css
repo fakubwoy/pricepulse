@@ -686,6 +686,9 @@ header::after {
 }
 
 .absolute{
+  right: 1rem; /* adjust as needed */
+  border: none;
+  color: #b91c1c;
   background-color: #fee2e2;
 }
 
