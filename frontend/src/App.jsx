@@ -904,7 +904,7 @@ const testLLMService = async () => {
   </div>
   
   {/* Alternatives List */}
-  {alternatives.length > 0 && (
+  {alternatives.length > 0 ? (
     <div className="border rounded-lg overflow-hidden mb-6">
       <div className="bg-gray-50 px-4 py-3 border-b">
         <h4 className="font-medium text-gray-800">Found on Other Platforms</h4>
@@ -951,7 +951,12 @@ const testLLMService = async () => {
         ))}
       </div>
     </div>
-  )}
+  ): (
+  <div className="alert alert-error mb-6">
+    <AlertTriangle className="mr-3 flex-shrink-0" />
+    <span>No alternatives found for this product.</span>
+  </div>
+)}
   
   {/* Price Comparison Modal */}
   {showComparison && comparisonData && (
