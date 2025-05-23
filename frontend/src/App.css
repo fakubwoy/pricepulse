@@ -685,6 +685,31 @@ header::after {
   border: 1px solid #fecaca;
 }
 
+.alert-error .absolute {
+  color: #dc2626; /* Red-600 to match error theme */
+  background-color: rgba(254, 226, 226, 0.8); /* Semi-transparent red-100 */
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease-in-out;
+  border: 1px solid rgba(220, 38, 38, 0.2);
+}
+
+.alert-error .absolute:hover {
+  color: #ffffff;
+  background-color: #dc2626; /* Red-600 background on hover */
+  border-color: #dc2626;
+  transform: scale(1.05);
+}
+
+.alert-error .absolute:focus {
+  outline: 2px solid #dc2626;
+  outline-offset: 2px;
+}
+
 /* Animation */
 .animate-spin {
   animation: spin 1s linear infinite;
