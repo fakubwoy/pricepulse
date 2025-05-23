@@ -72,22 +72,70 @@ from database import db
 
 # Create a scheduler for updating prices and checking alerts
 # Replace the scheduler section in main.py with this:
-if os.getenv('RENDER'):  # Only run scheduler on Render
-    def run_with_context(func):
-        """Wrapper to run scheduled jobs within Flask app context"""
+
+# Create a scheduler for updating prices and checking alerts
+def run_with_context(func):
+    """Wrapper to run scheduled jobs within Flask app context"""
+    try:
         with app.app_context():
+            print(f"Running scheduled job: {func.__name__}")
             func()
-    
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(func=lambda: run_with_context(update_all_products), trigger="interval", minutes=2)
-    scheduler.add_job(func=lambda: run_with_context(check_price_alerts), trigger="interval", minutes=15)
-    scheduler.add_job(
-        func=lambda: run_with_context(store_daily_prices), 
-        trigger="cron", 
-        hour=0, 
-        minute=30  # Run at 12:30 AM IST daily
-    )
+            print(f"Completed scheduled job: {func.__name__}")
+    except Exception as e:
+        print(f"Error in scheduled job {func.__name__}: {str(e)}")
+
+# Initialize scheduler regardless of environment for testing
+scheduler = BackgroundScheduler()
+
+# Add logging to see if scheduler is working
+def scheduled_update():
+    print("Scheduled update started...")
+    update_all_products()
+    print("Scheduled update completed.")
+
+def scheduled_alerts():
+    print("Scheduled alert check started...")
+    check_price_alerts()
+    print("Scheduled alert check completed.")
+
+def scheduled_daily_prices():
+    print("Scheduled daily price storage started...")
+    store_daily_prices()
+    print("Scheduled daily price storage completed.")
+
+# Add jobs with logging
+scheduler.add_job(
+    func=lambda: run_with_context(scheduled_update), 
+    trigger="interval", 
+    minutes=2,
+    id='update_products'
+)
+
+scheduler.add_job(
+    func=lambda: run_with_context(scheduled_alerts), 
+    trigger="interval", 
+    minutes=15,
+    id='check_alerts'
+)
+
+scheduler.add_job(
+    func=lambda: run_with_context(scheduled_daily_prices), 
+    trigger="cron", 
+    hour=0, 
+    minute=30,
+    id='daily_prices'
+)
+
+# Start the scheduler
+try:
     scheduler.start()
+    print("Scheduler started successfully!")
+    print(f"Active jobs: {[job.id for job in scheduler.get_jobs()]}")
+except Exception as e:
+    print(f"Failed to start scheduler: {str(e)}")
+
+# Keep scheduler reference to prevent garbage collection
+app.scheduler = scheduler
 
 @login_manager.user_loader
 def load_user(user_id):
