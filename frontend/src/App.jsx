@@ -1070,7 +1070,7 @@ const testLLMService = async () => {
   )}
   
   {/* Test LLM Button (for development) */}
-  <div className="mt-4">
+  {/* <div className="mt-4">
     <button
       onClick={testLLMService}
       className="btn btn-sm btn-ghost text-gray-600 hover:bg-gray-100"
@@ -1078,7 +1078,7 @@ const testLLMService = async () => {
       <Zap className="mr-2" size={16} />
       Test AI Service
     </button>
-  </div>
+  </div> */}
 </div>
                   {/* Price Alerts Section */}
                   <div>
