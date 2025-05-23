@@ -17,6 +17,8 @@
 | **User Auth** | Secure email-based login/signup. |
 | **Lightning Fast** | React+Vite frontend, optimized Flask backend. |
 | **Reliable Scraping** | BeautifulSoup + Requests with anti-bot bypass. |
+| **AI-Powered Search** | Uses GenAI + Google Custom Search API to find the same product on Flipkart, Meesho, and more. |
+| **Comparison Table** | View and compare real-time prices across platforms in a single table. |
 
 ---
 
@@ -27,6 +29,8 @@
 **Backend**  
 ![Flask](https://img.shields.io/badge/Flask-000000?style=flat&logo=flask) ![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python) ![SQLite](https://img.shields.io/badge/SQLite-07405E?style=flat&logo=sqlite)
 
+**AI & APIs**  
+![GenAI](https://img.shields.io/badge/GenAI-powered-blueviolet) ![Google Custom Search](https://img.shields.io/badge/Google%20Search-API-red?logo=google)
 
 ---
 
@@ -62,9 +66,8 @@ python3 main.py
 cd ../frontend
 npm install
 npm run dev
-
-Open [http://localhost:5173](http://localhost:5173) to see the app!
 ```
+Open [http://localhost:5173](http://localhost:5173) to see the app!
 ---
 
 ## 📦 Deployment
