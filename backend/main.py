@@ -132,7 +132,8 @@ def continuous_hourly_refresh():
                                 # Always create a history entry, regardless of price change
                                 price_history = PriceHistory(
                                     product_id=product.id,
-                                    price=product_data['current_price']
+                                    price=product_data['current_price'],
+                                    timestamp=get_ist_time()
                                 )
                                 db.session.add(price_history)
                                 
@@ -445,9 +446,10 @@ def register():
     db.session.commit()
     
     # Generate token
+    # Generate token
     token = jwt.encode({
         'user_id': user.id,
-        'exp': datetime.utcnow() + timedelta(days=30)
+        'exp': get_ist_time() + timedelta(days=30)
     }, app.config['SECRET_KEY'])
     
     return jsonify({
@@ -469,13 +471,14 @@ def login():
         return jsonify({'error': 'Invalid email or password'}), 401
         
     # Update last login
-    user.last_login = datetime.utcnow()
+    user.last_login = get_ist_time()
     db.session.commit()
     
     # Generate token
+    # Generate token
     token = jwt.encode({
         'user_id': user.id,
-        'exp': datetime.utcnow() + timedelta(days=30)
+        'exp': get_ist_time() + timedelta(days=30)
     }, app.config['SECRET_KEY'])
     
     return jsonify({
@@ -600,7 +603,8 @@ def add_product(current_user):
         if product_data['current_price'] > 0:
             price_history = PriceHistory(
                 product_id=product.id,
-                price=product_data['current_price']
+                price=product_data['current_price'],
+                timestamp=get_ist_time()
             )
             db.session.add(price_history)
             db.session.commit()
@@ -747,7 +751,8 @@ def refresh_product(current_user, product_id):
         if current_price is not None and current_price > 0:
             price_history = PriceHistory(
                 product_id=product.id,
-                price=current_price
+                price=current_price,
+                timestamp=get_ist_time()
             )
             db.session.add(price_history)
             print(f"Added price entry for refresh: {current_price}")
