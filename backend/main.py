@@ -34,7 +34,7 @@ if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
     DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
     
 # Configure database
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///pricepulse.db').replace('postgres://', 'postgresql://', 1)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///pricepulse.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 
@@ -74,8 +74,7 @@ def safe_datetime_subtract(dt1, dt2):
 
 # Initialize the database
 init_db(app)
-with app.app_context():
-    db.create_all()
+
 # Import db after initialization
 from database import db
 def continuous_hourly_refresh():
