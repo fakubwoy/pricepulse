@@ -58,7 +58,9 @@ echo "MAIL_PORT=587" >> .env
 echo "MAIL_USERNAME=your_email@gmail.com" >> .env
 echo "MAIL_PASSWORD=your_app_password" >> .env  
 echo "SECRET_KEY=your_secret_key" >> .env
-
+echo "GOOGLE_API_KEY=your_google_api_key" >> .env
+echo "GOOGLE_CSE_ID=your_google_cse_id" >> .env
+echo "HUGGINGFACE_API_KEY=you_huggingface_api_key" >> .env
 python3 main.py
 ```
 ### 3. Frontend (React)
