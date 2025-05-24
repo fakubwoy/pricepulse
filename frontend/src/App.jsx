@@ -64,6 +64,10 @@ function App() {
   // Fetch price history when a product is selected
   useEffect(() => {
     if (selectedProduct && auth.isAuthenticated) {
+      setAlternatives([]);
+    setComparisonData(null);
+    setShowComparison(false);
+    setShowNoAlternativesAlert(false);
       fetchPriceHistory(selectedProduct.id);
       fetchAlerts(selectedProduct.id);
     }
