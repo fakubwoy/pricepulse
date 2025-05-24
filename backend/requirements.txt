@@ -20,3 +20,4 @@ fake-useragent>=1.4.0
 chardet>=5.2.0
 html5lib>=1.1
 requests-ip-rotator>=1.0.14
+psycopg2-binary==2.9.9
