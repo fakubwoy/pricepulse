@@ -806,20 +806,29 @@ const testLLMService = async () => {
                       </div>
                       
                       <div className="text-sm text-gray-500">
-                        <p>
-                          Last updated:{" "}
-                          {new Date(selectedProduct.last_updated).toLocaleString("en-GB", {
-                            timeZone: "Asia/Kolkata",
-                            day: "2-digit",
-                            month: "2-digit",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            second: "2-digit",
-                            hour12: true,
-                          })}
-                        </p>
-                      </div>
+                          <p>
+                            Last updated:{" "}
+                            {(() => {
+                              const date = new Date(selectedProduct.last_updated);
+                              date.setMinutes(date.getMinutes() + 330); // Add 5 hours 30 minutes
+                              const day = String(date.getDate()).padStart(2, '0');
+                              const month = String(date.getMonth() + 1).padStart(2, '0');
+                              const year = date.getFullYear();
+                              
+                              let hours = date.getHours();
+                              const minutes = String(date.getMinutes()).padStart(2, '0');
+                              const seconds = String(date.getSeconds()).padStart(2, '0');
+                              
+                              const ampm = hours >= 12 ? 'PM' : 'AM';
+                              hours = hours % 12;
+                              hours = hours ? hours : 12; // Convert '0' to '12'
+                              const formattedHours = String(hours).padStart(2, '0');
+
+                              return `${day}/${month}/${year} ${formattedHours}:${minutes}:${seconds} ${ampm}`;
+                            })()}
+                          </p>
+                        </div>
+
                     </div>
                   </div>
                   
