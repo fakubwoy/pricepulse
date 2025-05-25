@@ -22,7 +22,7 @@
 
 ---
 ## Architecture Diagram
-![Artchitecture Diagram](./assets/arch diagram.png)
+![Artchitecture Diagram](./assets/archdiagram.png)
 
 ## 🛠️ Tech Stack
 **Frontend**  
