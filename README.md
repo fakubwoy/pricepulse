@@ -21,6 +21,8 @@
 | **Comparison Table** | View and compare real-time prices across platforms in a single table. |
 
 ---
+## Architecture Diagram
+![Artchitecture Diagram](./assets/arch diagram.png)
 
 ## 🛠️ Tech Stack
 **Frontend**  
