@@ -216,39 +216,32 @@ def update_all_products():
     products = Product.query.all()
     
     for product in products:
-        # Skip products updated in the last hour to avoid unnecessary requests
-        if product.last_updated and (datetime.utcnow() - product.last_updated).total_seconds() < 3600:
-            continue
-            
         data = scraper.scrape_product(product.url)
         if 'error' not in data:
-            # Update product details
+            # Always update these fields
             product.name = data['name'] or product.name
             product.image = data['image'] or product.image
             product.last_updated = datetime.utcnow()
             
-            # Only add price history if price has changed
-            if data['current_price'] and data['current_price'] != product.current_price:
+            # Always store price history even if price didn't change
+            if data['current_price']:
+                old_price = product.current_price
                 product.current_price = data['current_price']
                 
-                # Add to price history
+                # Add to price history regardless of change
                 price_history = PriceHistory(product_id=product.id, price=data['current_price'])
                 db.session.add(price_history)
                 
-                # Check if any price alerts should be triggered
-                check_price_alerts(product)
-                
-            # Update additional attributes if available
-            if data['original_price']:
-                product.original_price = data['original_price']
-            if data['currency']:
-                product.currency = data['currency']
-            if data['description']:
-                product.description = data['description']
-            if data['rating']:
-                product.rating = data['rating']
-            if data['in_stock'] is not None:
-                product.in_stock = data['in_stock']
+                # Only check alerts if price actually decreased
+                if old_price and data['current_price'] < old_price:
+                    check_price_alerts(product)
+            
+            # Update additional attributes
+            product.original_price = data['original_price'] or product.original_price
+            product.currency = data['currency'] or product.currency
+            product.description = data['description'] or product.description
+            product.rating = data['rating'] or product.rating
+            product.in_stock = data['in_stock'] if data['in_stock'] is not None else product.in_stock
                 
     db.session.commit()
 

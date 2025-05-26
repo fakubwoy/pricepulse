@@ -45,7 +45,7 @@ from database import db
 
 # Create a scheduler for updating prices and checking alerts
 scheduler = BackgroundScheduler()
-scheduler.add_job(func=update_all_products, trigger="interval", minutes=60)
+scheduler.add_job(func=update_all_products, trigger="interval", minutes=30)
 scheduler.add_job(func=check_price_alerts, trigger="interval", minutes=15)
 scheduler.start()
 
