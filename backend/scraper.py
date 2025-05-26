@@ -688,83 +688,24 @@ def update_all_products():
     scraper = AmazonScraper()
     products = Product.query.all()
     
-    # Randomize the order to avoid patterns
-    random.shuffle(products)
-    
     for i, product in enumerate(products):
-        # Check if product needs updating
-        needs_update = False
-        
-        if not product.last_updated:
-            needs_update = True
-        else:
-            # Check if it's been more than 4 hours since last update
-            time_since_update = (datetime.utcnow() - product.last_updated).total_seconds()
-            if time_since_update >= 14400:  # 4 hours
-                needs_update = True
-                
-        if not needs_update:
-            continue
-        
         print(f"Updating product {i+1}/{len(products)}: {product.name}")
-        
-        # Progressive delay - longer delays for more products updated
-        delay = random.uniform(10, 30) + (i * 2)  # Increase delay over time
-        print(f"Waiting {delay:.1f} seconds before next request...")
-        time.sleep(delay)
         
         data = scraper.scrape_product(product.url)
         
         if 'error' not in data:
-            # Update product details
-            if data['name']:
-                product.name = data['name']
-            if data['image']:
-                product.image = data['image']
+            # Always update last_updated timestamp
             product.last_updated = datetime.utcnow()
             
+            # Always store price history entry
             price_to_store = data.get('current_price', product.current_price)
-
             if price_to_store and price_to_store > 0:
-                # Add new price history entry for every refresh
                 price_history = PriceHistory(product_id=product.id, price=price_to_store)
                 db.session.add(price_history)
                 print(f"Added price entry: {price_to_store} for {product.name}")
-                
-                # Update current price (even if it's the same)
-                if data.get('current_price'):
-                    old_price = product.current_price
-                    product.current_price = data['current_price']
-                    
-                    if old_price != data['current_price']:
-                        print(f"Price changed: {old_price} -> {data['current_price']}")
-                        # Check price alerts only when price actually changes
-                        check_price_alerts(product)
-                    else:
-                        print(f"Price unchanged: {data['current_price']}")
             
-            # Update other attributes
-            for attr in ['original_price', 'currency', 'description', 'rating', 'in_stock']:
-                if data.get(attr) is not None:
-                    setattr(product, attr, data[attr])
-            
-            # Commit after each successful update
+            # Commit after each update
             db.session.commit()
-            print(f"Successfully updated product: {product.name}")
-            
-        else:
-            print(f"Error updating product {product.name}: {data['error']}")
-            
-            # Update the last_updated timestamp even if scraping failed
-            product.last_updated = datetime.utcnow()
-            db.session.commit()
-            
-            # If we get rate limited, wait longer
-            if 'rate limit' in data['error'].lower():
-                print("Rate limited detected, waiting 5 minutes...")
-                time.sleep(300)  # Wait 5 minutes
-    
-    print("Finished updating all products")
 
 # Add this new function to scraper.py
 
